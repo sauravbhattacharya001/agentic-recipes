@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="promptlib" Version="5.25.0" />
+    <PackageReference Include="promptlib" Version="5.26.0" />
   </ItemGroup>
 
 </Project>
