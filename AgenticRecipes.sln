@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiPerspective", "recipes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeReviewPipeline", "recipes\code-review-pipeline\CodeReviewPipeline.csproj", "{4CD422CD-AC14-47C6-8835-CE96A6EFF612}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgenticRecipes.Tests", "tests\AgenticRecipes.Tests.csproj", "{A99E7B23-C021-4345-A3CC-1D7CE791D2FC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
 		{4CD422CD-AC14-47C6-8835-CE96A6EFF612}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4CD422CD-AC14-47C6-8835-CE96A6EFF612}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4CD422CD-AC14-47C6-8835-CE96A6EFF612}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A99E7B23-C021-4345-A3CC-1D7CE791D2FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A99E7B23-C021-4345-A3CC-1D7CE791D2FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A99E7B23-C021-4345-A3CC-1D7CE791D2FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A99E7B23-C021-4345-A3CC-1D7CE791D2FC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{164C8DBA-DD94-479B-907D-83A35B6A2ADE} = {1D837DAA-2FC9-4DBA-B319-5CBFD1EB783A}
