@@ -12,6 +12,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Multi-Perspective Analysis](recipes/multi-perspective/) | `PromptOrchestrator` | Run same input through multiple persona prompts, synthesize insights |
 | [Code Review Pipeline](recipes/code-review-pipeline/) | `PromptPipeline` | Analyze code through validation, review, and fix stages with retry |
 | [Tool Agent Loop](recipes/tool-agent-loop/) | `PromptToolAgent` | ReAct loop: call tools, observe results, iterate to final answer |
+| [Conditional Router](recipes/conditional-router/) | `PromptRouter` | Classify input, branch to specialized handlers, fall back gracefully |
 
 ## Architecture
 
@@ -83,7 +84,7 @@ dotnet test
 - [x] Tool Agent Loop (`PromptToolAgent`)
 - [ ] RAG Pipeline (retrieve → augment → generate)
 - [ ] Iterative Refinement (critic loop)
-- [ ] Conditional Router (classify → branch)
+- [x] Conditional Router (classify → branch)
 - [ ] Guardrailed Pipeline (injection detection + content filtering)
 - [ ] Memory-Augmented Chain (context accumulation across turns)
 
