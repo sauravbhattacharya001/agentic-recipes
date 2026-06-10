@@ -14,6 +14,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Tool Agent Loop](recipes/tool-agent-loop/) | `PromptToolAgent` | ReAct loop: call tools, observe results, iterate to final answer |
 | [Conditional Router](recipes/conditional-router/) | `PromptRouter` | Classify input, branch to specialized handlers, fall back gracefully |
 | [Iterative Refinement](recipes/iterative-refinement/) | Critic Loop | Generate a draft, self-critique with a score, revise until good enough or plateaued |
+| [Guardrailed Pipeline](recipes/guardrailed-pipeline/) | Inspect → Decide → Act | Screen input for injection, PII/secrets, and disallowed content, then allow / sanitize / block |
 
 ## Architecture
 
@@ -86,7 +87,7 @@ dotnet test
 - [ ] RAG Pipeline (retrieve → augment → generate)
 - [x] Iterative Refinement (critic loop)
 - [x] Conditional Router (classify → branch)
-- [ ] Guardrailed Pipeline (injection detection + content filtering)
+- [x] Guardrailed Pipeline (injection detection + content filtering)
 - [ ] Memory-Augmented Chain (context accumulation across turns)
 
 ## License
