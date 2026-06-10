@@ -13,6 +13,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Code Review Pipeline](recipes/code-review-pipeline/) | `PromptPipeline` | Analyze code through validation, review, and fix stages with retry |
 | [Tool Agent Loop](recipes/tool-agent-loop/) | `PromptToolAgent` | ReAct loop: call tools, observe results, iterate to final answer |
 | [Conditional Router](recipes/conditional-router/) | `PromptRouter` | Classify input, branch to specialized handlers, fall back gracefully |
+| [Iterative Refinement](recipes/iterative-refinement/) | Critic Loop | Generate a draft, self-critique with a score, revise until good enough or plateaued |
 
 ## Architecture
 
@@ -66,7 +67,7 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-61 tests total: 56 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+90 tests total: 85 pass out of the box, 5 skipped (require Azure OpenAI credentials).
 
 ## Adding a Recipe
 
@@ -83,7 +84,7 @@ dotnet test
 - [x] Middleware Pipeline (`PromptPipeline`)
 - [x] Tool Agent Loop (`PromptToolAgent`)
 - [ ] RAG Pipeline (retrieve → augment → generate)
-- [ ] Iterative Refinement (critic loop)
+- [x] Iterative Refinement (critic loop)
 - [x] Conditional Router (classify → branch)
 - [ ] Guardrailed Pipeline (injection detection + content filtering)
 - [ ] Memory-Augmented Chain (context accumulation across turns)
