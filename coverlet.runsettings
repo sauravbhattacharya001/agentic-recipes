@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverlet settings for the "XPlat Code Coverage" collector used by dotnet test.
+
+  Each recipe in this repo is a standalone top-level program, so the recipe
+  logic under test is mirrored directly into the test assembly rather than
+  referenced as a separate project. Coverlet excludes test assemblies by
+  default, which would report 0 percent here, so IncludeTestAssembly is enabled
+  and the third-party test frameworks (xUnit, Moq, coverlet) are filtered out so
+  the reported number reflects the recipe code that actually runs.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <IncludeTestAssembly>true</IncludeTestAssembly>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <Exclude>[xunit.*]*,[Moq]*,[coverlet.*]*</Exclude>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

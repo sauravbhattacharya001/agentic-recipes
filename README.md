@@ -1,5 +1,11 @@
 # 🧪 Agentic Recipes
 
+[![CI](https://github.com/sauravbhattacharya001/agentic-recipes/actions/workflows/ci.yml/badge.svg)](https://github.com/sauravbhattacharya001/agentic-recipes/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/sauravbhattacharya001/agentic-recipes/actions/workflows/codeql.yml/badge.svg)](https://github.com/sauravbhattacharya001/agentic-recipes/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/sauravbhattacharya001/agentic-recipes/branch/master/graph/badge.svg)](https://codecov.io/gh/sauravbhattacharya001/agentic-recipes)
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Canonical agentic pipeline examples built on [`promptlib`](https://www.nuget.org/packages/promptlib) ([source](https://github.com/sauravbhattacharya001/prompt)).
 
 Each recipe demonstrates a different orchestration pattern — from simple linear chains to tool-calling agent loops — showing how composable prompt building blocks become autonomous multi-step agents.
@@ -70,6 +76,21 @@ dotnet test
 ```
 
 134 tests total: 129 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+
+### Coverage
+
+Each recipe is a standalone top-level program, so the logic under test is
+mirrored into the test assembly. Coverage is collected with
+[Coverlet](https://github.com/coverlet-coverage/coverlet) using the checked-in
+`coverlet.runsettings` (which enables `IncludeTestAssembly` and filters out the
+test frameworks), then reported to [Codecov](https://codecov.io) by CI:
+
+```bash
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+```
+
+The Cobertura report is written under `TestResults/`. Current coverage is ~99%
+line / ~94% branch over the recipe logic.
 ## Adding a Recipe
 
 1. Create a folder under `recipes/`

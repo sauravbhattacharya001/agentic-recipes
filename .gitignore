@@ -3,3 +3,6 @@ obj/
 *.user
 .vs/
 *.DotSettings.user
+TestResults/
+[Cc]overage*/
+*.cobertura.xml

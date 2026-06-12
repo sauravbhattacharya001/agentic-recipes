@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build, test & coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore AgenticRecipes.sln
+
+      - name: Build
+        run: dotnet build AgenticRecipes.sln --configuration Release --no-restore
+
+      - name: Test with coverage
+        run: >
+          dotnet test AgenticRecipes.sln
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --collect:"XPlat Code Coverage"
+          --settings coverlet.runsettings
+          --results-directory ./TestResults
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./TestResults/**/coverage.cobertura.xml
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test & coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            ./TestResults/**/*.trx
+            ./TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 14
