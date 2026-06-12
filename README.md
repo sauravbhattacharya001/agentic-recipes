@@ -22,6 +22,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Iterative Refinement](recipes/iterative-refinement/) | Critic Loop | Generate a draft, self-critique with a score, revise until good enough or plateaued |
 | [Guardrailed Pipeline](recipes/guardrailed-pipeline/) | Inspect → Decide → Act | Screen input for injection, PII/secrets, and disallowed content, then allow / sanitize / block |
 | [Memory-Augmented Chain](recipes/memory-augmented/) | Retrieve → Augment → Generate → Remember | Carry context across turns with self-managing working memory: relevance recall, salience decay, eviction |
+| [RAG Pipeline](recipes/rag-pipeline/) | Retrieve → Augment → Generate | Ground answers in a document corpus with TF-IDF retrieval, inline citations, and autonomous abstention |
 
 ## Architecture
 
@@ -105,7 +106,7 @@ line / ~94% branch over the recipe logic.
 - [x] Fan-Out / Fan-In (`PromptOrchestrator`)
 - [x] Middleware Pipeline (`PromptPipeline`)
 - [x] Tool Agent Loop (`PromptToolAgent`)
-- [ ] RAG Pipeline (retrieve → augment → generate)
+- [x] RAG Pipeline (retrieve → augment → generate)
 - [x] Iterative Refinement (critic loop)
 - [x] Conditional Router (classify → branch)
 - [x] Guardrailed Pipeline (injection detection + content filtering)
