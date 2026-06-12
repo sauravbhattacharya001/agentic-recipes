@@ -1,0 +1,70 @@
+# Dependabot configuration for agentic-recipes
+#
+# Keeps the solution's NuGet packages and GitHub Actions workflows up to date.
+# Dependabot's NuGet ecosystem recurses from the configured directory, so a
+# single "/" entry covers AgenticRecipes.sln plus every recipe and the test
+# project under recipes/ and tests/.
+#
+# Updates are grouped to keep PR volume low: production (promptlib) bumps land
+# separately from the xUnit/Moq/test-SDK churn, and all Actions bumps batch
+# into one PR per week.
+#
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+
+updates:
+  # ── .NET / NuGet packages (recipes + tests) ──────────────────────────────
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build(deps)"
+      prefix-development: "build(deps-dev)"
+    labels:
+      - "dependencies"
+      - "nuget"
+    groups:
+      # Test tooling moves together and rarely affects shipped behavior.
+      test-dependencies:
+        patterns:
+          - "Microsoft.NET.Test.Sdk"
+          - "xunit*"
+          - "Moq"
+        update-types:
+          - "minor"
+          - "patch"
+      # Everything else (promptlib + any future runtime deps): batch minor/patch.
+      nuget-minor-and-patch:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "Microsoft.NET.Test.Sdk"
+          - "xunit*"
+          - "Moq"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ── GitHub Actions (CodeQL + future workflows) ───────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions-all:
+        patterns:
+          - "*"
