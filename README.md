@@ -15,6 +15,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Conditional Router](recipes/conditional-router/) | `PromptRouter` | Classify input, branch to specialized handlers, fall back gracefully |
 | [Iterative Refinement](recipes/iterative-refinement/) | Critic Loop | Generate a draft, self-critique with a score, revise until good enough or plateaued |
 | [Guardrailed Pipeline](recipes/guardrailed-pipeline/) | Inspect → Decide → Act | Screen input for injection, PII/secrets, and disallowed content, then allow / sanitize / block |
+| [Memory-Augmented Chain](recipes/memory-augmented/) | Retrieve → Augment → Generate → Remember | Carry context across turns with self-managing working memory: relevance recall, salience decay, eviction |
 
 ## Architecture
 
@@ -68,8 +69,7 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-90 tests total: 85 pass out of the box, 5 skipped (require Azure OpenAI credentials).
-
+134 tests total: 129 pass out of the box, 5 skipped (require Azure OpenAI credentials).
 ## Adding a Recipe
 
 1. Create a folder under `recipes/`
@@ -88,7 +88,7 @@ dotnet test
 - [x] Iterative Refinement (critic loop)
 - [x] Conditional Router (classify → branch)
 - [x] Guardrailed Pipeline (injection detection + content filtering)
-- [ ] Memory-Augmented Chain (context accumulation across turns)
+- [x] Memory-Augmented Chain (context accumulation across turns)
 
 ## License
 
