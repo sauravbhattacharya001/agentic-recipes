@@ -23,6 +23,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Guardrailed Pipeline](recipes/guardrailed-pipeline/) | Inspect → Decide → Act | Screen input for injection, PII/secrets, and disallowed content, then allow / sanitize / block |
 | [Memory-Augmented Chain](recipes/memory-augmented/) | Retrieve → Augment → Generate → Remember | Carry context across turns with self-managing working memory: relevance recall, salience decay, eviction |
 | [RAG Pipeline](recipes/rag-pipeline/) | Retrieve → Augment → Generate | Ground answers in a document corpus with TF-IDF retrieval, inline citations, and autonomous abstention |
+| [Plan-and-Execute](recipes/plan-and-execute/) | Decompose → Execute → Adapt | Decompose a goal into a dependency-ordered plan, execute it, and adapt to step failures with retry → fallback → skip → abort |
 
 ## Architecture
 
@@ -76,7 +77,7 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-134 tests total: 129 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+191 tests total: 186 pass out of the box, 5 skipped (require Azure OpenAI credentials).
 
 ### Coverage
 
@@ -111,6 +112,7 @@ line / ~94% branch over the recipe logic.
 - [x] Conditional Router (classify → branch)
 - [x] Guardrailed Pipeline (injection detection + content filtering)
 - [x] Memory-Augmented Chain (context accumulation across turns)
+- [x] Plan-and-Execute (decompose → execute → adapt: retry / fallback / skip / abort)
 
 ## License
 
