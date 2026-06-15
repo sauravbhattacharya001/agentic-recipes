@@ -26,6 +26,7 @@ Each recipe demonstrates a different orchestration pattern — from simple linea
 | [Plan-and-Execute](recipes/plan-and-execute/) | Decompose → Execute → Adapt | Decompose a goal into a dependency-ordered plan, execute it, and adapt to step failures with retry → fallback → skip → abort |
 | [Self-Consistency](recipes/self-consistency/) | Sample → Vote → Decide | Sample the same question N times, majority-vote over the answers, report consensus, and autonomously abstain when too split to trust |
 | [Multi-Agent Debate](recipes/multi-agent-debate/) | Argue → Rebut → Judge | Opposing agents debate across rounds, rebutting each other while a judge scores; stop early on convergence or a clear lead, escalate when hung |
+| [Reflexion](recipes/reflexion/) | Attempt → Evaluate → Reflect → Retry | Attempt a task, grade the outcome, write a verbal lesson from each failure into episodic memory, and retry wiser; stop on success, budget, or a stuck loop |
 
 ## Architecture
 
@@ -79,7 +80,7 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-228 tests total: 223 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+247 tests total: 242 pass out of the box, 5 skipped (require Azure OpenAI credentials).
 
 ### Coverage
 
@@ -117,6 +118,7 @@ line / ~94% branch over the recipe logic.
 - [x] Plan-and-Execute (decompose → execute → adapt: retry / fallback / skip / abort)
 - [x] Self-Consistency (sample N → majority vote → consensus-gated abstention)
 - [x] Multi-Agent Debate (argue → rebut → judge → converge or decide, escalate when hung)
+- [x] Reflexion (attempt → evaluate → verbal self-reflection → retry, learning from failure across trials)
 
 ## License
 
