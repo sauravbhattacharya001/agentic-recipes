@@ -346,10 +346,14 @@ class DebateOrchestrator
             //    (b) Decisive, stable judge lead: one debater is clearly ahead for
             //        several rounds running — call it without looping to the cap.
             var (curLeader, margin) = CurrentLead(scoreByDebater);
-            if (curLeader == leader && margin >= _options.DecisiveMargin)
-                stableLeadStreak++;
-            else
-                stableLeadStreak = 1;
+            var decisiveThisRound = curLeader == leader && margin >= _options.DecisiveMargin;
+            // Count only CONSECUTIVE decisive rounds for the same leader: a non-decisive
+            // round (or a leader flip) breaks the streak back to zero, and a fresh decisive
+            // round restarts it at one. Reviving the streak to one after a gap would let a
+            // single decisive round masquerade as a multi-round stable lead.
+            stableLeadStreak = decisiveThisRound ? stableLeadStreak + 1
+                             : margin >= _options.DecisiveMargin ? 1
+                             : 0;
             leader = curLeader;
 
             if (margin >= _options.DecisiveMargin && stableLeadStreak >= _options.StableLeadRounds)

@@ -98,6 +98,45 @@ public class MultiAgentDebateTests
     }
 
     [Fact]
+    public async Task StableLead_RequiresConsecutiveDecisiveRounds_NotJustTwoTotal()
+    {
+        // Same leader (A) throughout, but the per-round margin DIPS below the
+        // decisive bar in the middle round before recovering:
+        //   r0: A=0.9 B=0.1 -> cum 0.9/0.1, margin 0.80  (decisive)
+        //   r1: A=0.0 B=0.8 -> cum 0.9/0.9, margin 0.00  (NOT decisive)
+        //   r2: A=0.9 B=0.0 -> cum 1.8/0.9, margin 0.33  (decisive again)
+        // The decisive rounds (0 and 2) are NOT consecutive, so a StableLeadRounds=2
+        // requirement must NOT be satisfied -> the debate stays Hung. A streak that
+        // resets to 1 (instead of 0) on the non-decisive round would wrongly reach 2
+        // on r2 and fire an early Decided.
+        var a = new Debater("A", (ctx, ct) => Task.FromResult(ctx.Round switch
+        {
+            0 => new DebateArgument("strong", "a", 0.9),
+            1 => new DebateArgument("silent", "a", 0.0),
+            _ => new DebateArgument("strong", "a", 0.9),
+        }));
+        var b = new Debater("B", (ctx, ct) => Task.FromResult(ctx.Round switch
+        {
+            0 => new DebateArgument("weak", "b", 0.1),
+            1 => new DebateArgument("strong", "b", 0.8),
+            _ => new DebateArgument("silent", "b", 0.0),
+        }));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 3,
+            DecisiveMargin = 0.30,
+            StableLeadRounds = 2,
+        });
+        var result = await orch.RunAsync("q", new[] { a, b }, ConfidenceJudge);
+
+        // A never held a decisive lead for two *consecutive* rounds, so no early stop.
+        Assert.Equal(DebateVerdict.Hung, result.Verdict);
+        Assert.Null(result.Winner);
+        Assert.Equal(3, result.RoundsUsed); // ran the full budget instead of deciding at r2
+    }
+
+    [Fact]
     public async Task StableLead_Resets_WhenLeaderFlips()
     {
         // A leads big in round 1, then B leads big in round 2. The lead is never
@@ -363,10 +402,10 @@ class DebateOrchestrator
             }
 
             var (curLeader, margin) = CurrentLead(scoreByDebater);
-            if (curLeader == leader && margin >= _options.DecisiveMargin)
-                stableLeadStreak++;
-            else
-                stableLeadStreak = 1;
+            var decisiveThisRound = curLeader == leader && margin >= _options.DecisiveMargin;
+            stableLeadStreak = decisiveThisRound ? stableLeadStreak + 1
+                             : margin >= _options.DecisiveMargin ? 1
+                             : 0;
             leader = curLeader;
 
             if (margin >= _options.DecisiveMargin && stableLeadStreak >= _options.StableLeadRounds)
