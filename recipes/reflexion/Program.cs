@@ -314,8 +314,11 @@ class ReflexionAgent
                 if (!string.IsNullOrWhiteSpace(lesson) && !reflections.Contains(lesson))
                 {
                     reflections.Add(lesson);
-                    // Bound episodic memory: drop the oldest lesson when over budget.
-                    if (reflections.Count > maxReflections && maxReflections > 0)
+                    // Bound episodic memory: drop the oldest lesson(s) until at/under
+                    // budget. MaxReflections == 0 is a valid floor (keep nothing), so the
+                    // trim must run even then — guarding on `> 0` would let memory grow
+                    // unbounded at the tightest possible cap.
+                    while (reflections.Count > maxReflections)
                         reflections.RemoveAt(0);
                     noNewLessonStreak = 0;
                 }

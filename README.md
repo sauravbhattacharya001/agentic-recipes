@@ -81,7 +81,7 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-266 tests total: 261 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+269 tests total: 264 pass out of the box, 5 skipped (require Azure OpenAI credentials).
 
 ### Coverage
 

@@ -291,6 +291,64 @@ public class ReflexionTests
     }
 
     [Fact]
+    public async Task SolveAsync_MaxReflectionsZero_KeepsNoLessons()
+    {
+        // A zero cap means "accumulate nothing" — the tightest possible bound, not
+        // "unbounded". Each trial still reflects (and the stuck-streak still resets on a
+        // genuinely new lesson), but episodic memory never retains anything.
+        var memorySizes = new List<int>();
+        var agent = new ReflexionAgent(new ReflexionOptions
+        {
+            MaxTrials = 4,
+            RewardThreshold = 2.0,   // never solves
+            MaxReflections = 0,      // keep nothing
+            StuckPatience = 99       // don't end early
+        });
+
+        var n = 0;
+        var result = await agent.SolveAsync(
+            "task",
+            actor: (t, lessons, i) =>
+            {
+                memorySizes.Add(lessons.Count);
+                return $"v{i}";
+            },
+            evaluate: (t, a) => new ReflexionEvaluation(0.0, false, "fb",
+                new List<string> { $"unique-{++n}" }),
+            reflect: (t, a, e, prior) => $"Lesson: {e.OpenIssues[0]}");
+
+        Assert.Equal(4, result.Trials.Count);
+        // Memory is empty entering every trial and empty at the end — never grows.
+        Assert.Equal(new[] { 0, 0, 0, 0 }, memorySizes);
+        Assert.Empty(result.Reflections);
+    }
+
+    [Fact]
+    public async Task SolveAsync_MaxReflectionsOne_KeepsOnlyMostRecentLesson()
+    {
+        // A cap of 1 keeps exactly the newest lesson, evicting the prior one each trial.
+        var agent = new ReflexionAgent(new ReflexionOptions
+        {
+            MaxTrials = 3,
+            RewardThreshold = 2.0,   // never solves
+            MaxReflections = 1,
+            StuckPatience = 99
+        });
+
+        var n = 0;
+        var result = await agent.SolveAsync(
+            "task",
+            actor: (t, lessons, i) => $"v{i}",
+            evaluate: (t, a) => new ReflexionEvaluation(0.0, false, "fb",
+                new List<string> { $"unique-{++n}" }),
+            reflect: (t, a, e, prior) => $"Lesson: {e.OpenIssues[0]}");
+
+        Assert.Equal(3, result.Trials.Count);
+        Assert.Single(result.Reflections);
+        Assert.Equal(new[] { "Lesson: unique-3" }, result.Reflections);
+    }
+
+    [Fact]
     public async Task SolveAsync_OnTrial_FiresOncePerTrial()
     {
         var observed = new List<int>();
@@ -509,7 +567,7 @@ class ReflexionAgent
                 if (!string.IsNullOrWhiteSpace(lesson) && !reflections.Contains(lesson))
                 {
                     reflections.Add(lesson);
-                    if (reflections.Count > maxReflections && maxReflections > 0)
+                    while (reflections.Count > maxReflections)
                         reflections.RemoveAt(0);
                     noNewLessonStreak = 0;
                 }
