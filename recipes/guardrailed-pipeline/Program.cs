@@ -191,7 +191,10 @@ class GuardrailPipeline
     {
         ("email",   new Regex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.Compiled), "[REDACTED_EMAIL]"),
         ("api_key", new Regex(@"\bsk-[A-Za-z0-9]{16,}\b", RegexOptions.Compiled), "[REDACTED_API_KEY]"),
-        ("credit_card", new Regex(@"\b(?:\d[ -]?){13,16}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
+        // 13-16 digits, optional single space/dash BETWEEN digits only — the
+        // trailing boundary must be a digit so redaction never eats the following
+        // space (which previously glued the next word onto the mask).
+        ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
         ("phone",   new Regex(@"\b\d{3}[ \-]\d{3}[ \-]\d{4}\b", RegexOptions.Compiled), "[REDACTED_PHONE]"),
     };
 

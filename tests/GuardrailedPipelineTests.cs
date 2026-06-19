@@ -109,6 +109,48 @@ public class GuardrailedPipelineTests
     }
 
     [Fact]
+    public void CreditCard_Redaction_DoesNotEatTrailingSpace()
+    {
+        // Regression: the card regex used to consume the space after the final
+        // digit, gluing the mask onto the next word ("[REDACTED_CARD]and").
+        // The forwarded SafeText must stay readable.
+        var guard = Create();
+        var v = guard.Evaluate("card 4111 1111 1111 1111 and call later");
+
+        Assert.Equal(GuardAction.Sanitize, v.Action);
+        Assert.Contains("[REDACTED_CARD] and call later", v.SafeText);
+        Assert.DoesNotContain("[REDACTED_CARD]and", v.SafeText);
+    }
+
+    [Theory]
+    [InlineData("4111111111111")]   // 13 contiguous digits
+    [InlineData("4111 1111 1111 1111")] // 16, space-separated
+    [InlineData("4111-1111-1111-1111")] // 16, dash-separated
+    public void CreditCard_ValidLengths_AreDetected(string card)
+    {
+        var guard = Create();
+        var v = guard.Evaluate($"my card is {card} thanks");
+
+        Assert.Equal(GuardAction.Sanitize, v.Action);
+        Assert.Contains("[REDACTED_CARD]", v.SafeText);
+        // surrounding words preserved with their spaces
+        Assert.Contains("my card is [REDACTED_CARD] thanks", v.SafeText);
+    }
+
+    [Theory]
+    [InlineData("411111111111")]            // 12 digits — too short
+    [InlineData("41111111111111111")]       // 17 digits — too long
+    public void CreditCard_OutOfRangeDigitRuns_AreNotDetected(string digits)
+    {
+        var guard = Create();
+        var v = guard.Evaluate($"ref {digits} end");
+
+        Assert.Equal(GuardAction.Allow, v.Action);
+        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii");
+        Assert.Equal($"ref {digits} end", v.SafeText);
+    }
+
+    [Fact]
     public void Phone_IsRedacted()
     {
         var guard = Create();
@@ -290,7 +332,7 @@ class GuardrailPipeline
     {
         ("email",   new Regex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.Compiled), "[REDACTED_EMAIL]"),
         ("api_key", new Regex(@"\bsk-[A-Za-z0-9]{16,}\b", RegexOptions.Compiled), "[REDACTED_API_KEY]"),
-        ("credit_card", new Regex(@"\b(?:\d[ -]?){13,16}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
+        ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
         ("phone",   new Regex(@"\b\d{3}[ \-]\d{3}[ \-]\d{4}\b", RegexOptions.Compiled), "[REDACTED_PHONE]"),
     };
 
