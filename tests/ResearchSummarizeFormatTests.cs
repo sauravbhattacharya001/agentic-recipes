@@ -84,11 +84,8 @@ public class ResearchSummarizeFormatTests
     }
 
     // ── Execution ────────────────────────────────────────────
-    // These tests call PromptChain.RunAsync which requires Azure OpenAI.
-    // They are skipped unless AZURE_OPENAI_API_URI is set.
-
-    private static bool HasAzureCredentials =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AZURE_OPENAI_API_URI"));
+    // These tests call PromptChain.RunAsync against a live Azure OpenAI endpoint,
+    // so they are skipped in the unit suite (run them manually with credentials).
 
     [Fact(Skip = "Requires Azure OpenAI credentials")]
     public async Task RunAsync_ExecutesAllSteps_InOrder()

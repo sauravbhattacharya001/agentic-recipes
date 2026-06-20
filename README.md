@@ -81,7 +81,9 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-269 tests total: 264 pass out of the box, 5 skipped (require Azure OpenAI credentials).
+The suite passes out of the box. 5 integration tests are skipped: they drive
+`PromptChain.RunAsync` against a live Azure OpenAI endpoint, so they are not run
+as part of the unit suite (see the environment variables above).
 
 ### Coverage
 
