@@ -215,7 +215,7 @@ public class IterativeRefinementTests
     }
 
     [Fact]
-    public async Task RefinementStep_Verdict_BucketsByScore()
+    public void RefinementStep_Verdict_BucketsByScore()
     {
         Assert.Equal("ship-ready", new RefinementStep(1, "d", 85, "f", new List<string>()).Verdict);
         Assert.Equal("promising", new RefinementStep(1, "d", 65, "f", new List<string>()).Verdict);

@@ -9,16 +9,16 @@ public class ToolAgentLoopTests
     private static AgentTool CreateWeatherTool()
     {
         return new AgentTool("get_weather", "Get weather for a city",
-            async (argsJson, ct) =>
+            (argsJson, ct) =>
             {
                 var args = JsonDocument.Parse(argsJson).RootElement;
                 var city = args.GetProperty("city").GetString()!;
-                return city.ToLower() switch
+                return Task.FromResult(city.ToLower() switch
                 {
                     "seattle" => "{\"temp\":62,\"condition\":\"cloudy\"}",
                     "phoenix" => "{\"temp\":105,\"condition\":\"sunny\"}",
                     _ => "{\"temp\":70,\"condition\":\"clear\"}"
-                };
+                });
             })
             .AddParameter("city", "string", "City name", required: true);
     }
@@ -26,16 +26,16 @@ public class ToolAgentLoopTests
     private static AgentTool CreateCalculatorTool()
     {
         return new AgentTool("calculate", "Evaluate math",
-            async (argsJson, ct) =>
+            (argsJson, ct) =>
             {
                 var args = JsonDocument.Parse(argsJson).RootElement;
                 var expr = args.GetProperty("expression").GetString()!;
-                return expr switch
+                return Task.FromResult(expr switch
                 {
                     "105-62" => "43",
                     "2+2" => "4",
                     _ => "0"
-                };
+                });
             })
             .AddParameter("expression", "string", "Math expression", required: true);
     }
@@ -48,11 +48,11 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Weather in Seattle?",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]";
-                return "It's 62°F and cloudy in Seattle.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
+                return Task.FromResult("It's 62°F and cloudy in Seattle.");
             });
 
         Assert.True(result.Completed);
@@ -70,12 +70,12 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Compare Seattle and Phoenix",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
                 if (turn == 1)
-                    return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"},{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Phoenix\\\"}\"}]";
-                return "Seattle is 62°F, Phoenix is 105°F.";
+                    return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"},{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Phoenix\\\"}\"}]");
+                return Task.FromResult("Seattle is 62°F, Phoenix is 105°F.");
             });
 
         Assert.Equal(2, result.Turns[0].ToolCalls.Count);
@@ -91,13 +91,13 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("How much hotter is Phoenix than Seattle?",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]";
-                if (turn == 2) return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Phoenix\\\"}\"}]";
-                if (turn == 3) return "[{\"name\":\"calculate\",\"arguments\":\"{\\\"expression\\\":\\\"105-62\\\"}\"}]";
-                return "Phoenix is 43°F hotter than Seattle.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
+                if (turn == 2) return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Phoenix\\\"}\"}]");
+                if (turn == 3) return Task.FromResult("[{\"name\":\"calculate\",\"arguments\":\"{\\\"expression\\\":\\\"105-62\\\"}\"}]");
+                return Task.FromResult("Phoenix is 43°F hotter than Seattle.");
             });
 
         Assert.True(result.Completed);
@@ -113,8 +113,8 @@ public class ToolAgentLoopTests
         agent.AddTool(CreateWeatherTool());
 
         var result = await agent.RunAsync("Keep going forever",
-            modelFunc: async (msgs, tools, ct) =>
-                "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
+            modelFunc: (msgs, tools, ct) =>
+                Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]"));
 
         Assert.False(result.Completed);
         Assert.Contains("maximum turns", result.StopReason);
@@ -128,11 +128,11 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Use a bad tool",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"nonexistent\",\"arguments\":\"{}\"}]";
-                return "That tool doesn't exist.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"nonexistent\",\"arguments\":\"{}\"}]");
+                return Task.FromResult("That tool doesn't exist.");
             });
 
         Assert.False(result.Turns[0].ToolResults[0].Success);
@@ -154,11 +154,11 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Use slow tool",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"slow\",\"arguments\":\"{}\"}]";
-                return "Tool timed out.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"slow\",\"arguments\":\"{}\"}]");
+                return Task.FromResult("Tool timed out.");
             });
 
         Assert.False(result.Turns[0].ToolResults[0].Success);
@@ -169,7 +169,7 @@ public class ToolAgentLoopTests
     public async Task Agent_OnBeforeToolExecution_CanBlockDangerousTools()
     {
         var deleteTool = new AgentTool("delete_file", "Delete a file",
-            async (args, ct) => "deleted");
+            (args, ct) => Task.FromResult("deleted"));
 
         var agent = new PromptToolAgent(new AgentOptions
         {
@@ -180,11 +180,11 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Delete all files",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"delete_file\",\"arguments\":\"{}\"}]";
-                return "I'm not allowed to delete files.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"delete_file\",\"arguments\":\"{}\"}]");
+                return Task.FromResult("I'm not allowed to delete files.");
             });
 
         Assert.False(result.Turns[0].ToolResults[0].Success);
@@ -201,10 +201,10 @@ public class ToolAgentLoopTests
 
         List<ConversationMessage>? captured = null;
         await agent.RunAsync("Hi",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 captured = new List<ConversationMessage>(msgs);
-                return "Hello!";
+                return Task.FromResult("Hello!");
             });
 
         Assert.Equal("system", captured![0].Role);
@@ -220,12 +220,12 @@ public class ToolAgentLoopTests
         List<ConversationMessage>? secondCall = null;
         int turn = 0;
         await agent.RunAsync("Weather?",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
                 secondCall = new List<ConversationMessage>(msgs);
-                return "62°F, cloudy.";
+                return Task.FromResult("62°F, cloudy.");
             });
 
         var toolMsg = secondCall!.Last(m => m.Role == "tool");
@@ -241,11 +241,11 @@ public class ToolAgentLoopTests
 
         int turn = 0;
         var result = await agent.RunAsync("Weather?",
-            modelFunc: async (msgs, tools, ct) =>
+            modelFunc: (msgs, tools, ct) =>
             {
                 turn++;
-                if (turn == 1) return "[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]";
-                return "Done.";
+                if (turn == 1) return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
+                return Task.FromResult("Done.");
             });
 
         Assert.All(result.Turns, t => Assert.True(t.Duration > TimeSpan.Zero));

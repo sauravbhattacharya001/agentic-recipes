@@ -85,7 +85,7 @@ public class ConditionalRouterTests
     {
         var router = CreateRouter();
         var result = await router.ClassifyAsync("anything",
-            async (prompt, ct) => "this is not json at all");
+            (prompt, ct) => Task.FromResult("this is not json at all"));
 
         Assert.Equal("general", result.Route);
         Assert.Equal(0.0, result.Confidence);
@@ -166,7 +166,7 @@ public class ConditionalRouterTests
         var (classification, response) = await router.RouteAsync(
             "my app crashed",
             classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.9, "crash"),
-            branchFunc: async (sys, msg, ct) => $"Handled by: {sys[..15]}",
+            branchFunc: (sys, msg, ct) => Task.FromResult($"Handled by: {sys[..15]}"),
             handlers: handlers);
 
         Assert.Equal("technical", classification.Route);
@@ -188,7 +188,7 @@ public class ConditionalRouterTests
         var (classification, response) = await router.RouteAsync(
             "unclear message",
             classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.3, "low conf"),
-            branchFunc: async (sys, msg, ct) => $"Used: {sys}",
+            branchFunc: (sys, msg, ct) => Task.FromResult($"Used: {sys}"),
             handlers: handlers);
 
         Assert.Equal("general", classification.Route);
@@ -207,7 +207,7 @@ public class ConditionalRouterTests
         });
 
         var result = await router.ClassifyAsync("test",
-            async (prompt, ct) => "broken json}}}");
+            (prompt, ct) => Task.FromResult("broken json}}}"));
 
         Assert.Equal("fallback_custom", result.Route);
     }
