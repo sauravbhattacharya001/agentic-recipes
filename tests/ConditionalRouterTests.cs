@@ -92,6 +92,62 @@ public class ConditionalRouterTests
         Assert.Contains("Parse error", result.Reasoning);
     }
 
+    // ── Structurally-malformed but syntactically VALID JSON ──────────────
+    // A flaky classifier can return well-formed JSON that is missing a field
+    // or carries the wrong type for one. These used to throw
+    // KeyNotFoundException / InvalidOperationException (NOT JsonException), so
+    // they escaped the parse-failure catch and crashed the router — violating
+    // the README's "All failures are logged, never crash" contract.
+
+    [Fact]
+    public async Task ClassifyAsync_MissingRouteKey_FallsBackInsteadOfThrowing()
+    {
+        var router = CreateRouter();
+        // Valid JSON, but no "route" property.
+        var result = await router.ClassifyAsync("anything",
+            (prompt, ct) => Task.FromResult("""{"confidence": 0.9, "reasoning": "no route field"}"""));
+
+        Assert.Equal("general", result.Route);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_ConfidenceAsString_FallsBackInsteadOfThrowing()
+    {
+        var router = CreateRouter();
+        // "confidence" is a string, not a number — GetDouble() would have thrown.
+        // An unparseable score is treated as no confidence → low-confidence fallback.
+        var result = await router.ClassifyAsync("anything",
+            (prompt, ct) => Task.FromResult("""{"route": "technical", "confidence": "high", "reasoning": "r"}"""));
+
+        Assert.Equal("general", result.Route);
+        Assert.Equal(0.0, result.Confidence);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_ConfidenceNull_FallsBackInsteadOfThrowing()
+    {
+        var router = CreateRouter();
+        var result = await router.ClassifyAsync("anything",
+            (prompt, ct) => Task.FromResult("""{"route": "technical", "confidence": null, "reasoning": "r"}"""));
+
+        Assert.Equal("general", result.Route);
+        Assert.Equal(0.0, result.Confidence);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_MissingReasoning_DefaultsToEmptyNotThrow()
+    {
+        var router = CreateRouter();
+        // Valid route + confidence, but no "reasoning" key: should keep the route
+        // and report an empty reasoning rather than throwing.
+        var result = await router.ClassifyAsync("anything",
+            (prompt, ct) => Task.FromResult("""{"route": "technical", "confidence": 0.92}"""));
+
+        Assert.Equal("technical", result.Route);
+        Assert.Equal(0.92, result.Confidence);
+        Assert.Equal("", result.Reasoning);
+    }
+
     [Fact]
     public async Task ClassifyAsync_RendersMessageInPrompt()
     {
@@ -272,9 +328,20 @@ class PromptRouter
         {
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
-            var route = root.GetProperty("route").GetString() ?? _options.FallbackRoute;
-            var confidence = root.GetProperty("confidence").GetDouble();
-            var reasoning = root.GetProperty("reasoning").GetString() ?? "";
+
+            // Defensive reads: syntactically valid JSON can still be missing a field or
+            // have the wrong type (confidence as a string/null). GetProperty/GetDouble
+            // would throw KeyNotFoundException/InvalidOperationException (not JsonException),
+            // escaping the catch and crashing the router. TryGet* keeps it graceful.
+            var route = root.TryGetProperty("route", out var routeEl) && routeEl.ValueKind == JsonValueKind.String
+                ? routeEl.GetString()!
+                : _options.FallbackRoute;
+            var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
+                ? confEl.GetDouble()
+                : 0.0;
+            var reasoning = root.TryGetProperty("reasoning", out var reasonEl) && reasonEl.ValueKind == JsonValueKind.String
+                ? reasonEl.GetString()!
+                : "";
 
             if (!_options.Routes.Contains(route))
                 route = _options.FallbackRoute;

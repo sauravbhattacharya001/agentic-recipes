@@ -254,9 +254,24 @@ class PromptRouter
         {
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
-            var route = root.GetProperty("route").GetString() ?? _options.FallbackRoute;
-            var confidence = root.GetProperty("confidence").GetDouble();
-            var reasoning = root.GetProperty("reasoning").GetString() ?? "";
+
+            // Read fields defensively: a real classifier can return syntactically valid
+            // JSON that's missing a field or has the wrong type for one (e.g. confidence
+            // as the string "high" or null). GetProperty(...)/GetDouble() would throw
+            // KeyNotFoundException/InvalidOperationException for those — which is NOT a
+            // JsonException, so it would escape the catch below and crash the router,
+            // breaking the "never crash; fall back" contract. TryGet* keeps it graceful.
+            var route = root.TryGetProperty("route", out var routeEl) && routeEl.ValueKind == JsonValueKind.String
+                ? routeEl.GetString()!
+                : _options.FallbackRoute;
+            // Missing/non-numeric confidence → 0.0, which trips the low-confidence
+            // fallback below (treat an unparseable score as "no confidence").
+            var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
+                ? confEl.GetDouble()
+                : 0.0;
+            var reasoning = root.TryGetProperty("reasoning", out var reasonEl) && reasonEl.ValueKind == JsonValueKind.String
+                ? reasonEl.GetString()!
+                : "";
 
             // Validate route exists
             if (!_options.Routes.Contains(route))
