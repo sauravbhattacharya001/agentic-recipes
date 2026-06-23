@@ -56,6 +56,19 @@ public class MemoryAugmentedChainTests
     }
 
     [Fact]
+    public async Task Retrieve_MatchesMultiWordTag_ByEitherWord()
+    {
+        var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0 });
+        // The tag is two words; neither word appears in the stored text. A query
+        // that mentions just ONE of the words must still recall the memory — tags
+        // are tokenized like text, so each word is independently matchable.
+        await agent.ChatAsync("a", (i, r, t) => StoreFact("Vehicle preference recorded.", 0.8, "electric car"));
+
+        Assert.Single(agent.Retrieve("recommend a fast car"));      // matches "car"
+        Assert.Single(agent.Retrieve("is it fully electric"));      // matches "electric"
+    }
+
+    [Fact]
     public async Task Retrieve_RespectsTopK()
     {
         var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0, TopK = 2, MaxItems = 10 });
@@ -457,7 +470,9 @@ class MemoryAugmentedAgent
     private double Relevance(HashSet<string> queryTokens, MemoryItem m)
     {
         var itemTokens = Tokenize(m.Text);
-        foreach (var tag in m.Tags) itemTokens.Add(Normalize(tag));
+        // Tokenize tags the same way as query/fact text so a multi-word tag
+        // ("electric car") contributes each of its words as a matchable token.
+        foreach (var tag in m.Tags) itemTokens.UnionWith(Tokenize(tag));
         return Jaccard(queryTokens, itemTokens);
     }
 
@@ -498,8 +513,6 @@ class MemoryAugmentedAgent
         sb.Clear();
         if (token.Length > 1 && !StopWords.Contains(token)) set.Add(token);
     }
-
-    private static string Normalize(string s) => s.Trim().ToLowerInvariant();
 
     private static IReadOnlyList<string> MergeTags(IReadOnlyList<string> a, IReadOnlyList<string> b)
     {

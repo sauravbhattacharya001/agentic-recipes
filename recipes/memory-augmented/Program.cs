@@ -374,7 +374,12 @@ class MemoryAugmentedAgent
     private double Relevance(HashSet<string> queryTokens, MemoryItem m)
     {
         var itemTokens = Tokenize(m.Text);
-        foreach (var tag in m.Tags) itemTokens.Add(Normalize(tag));
+        // Tokenize tags the same way as query/fact text so a multi-word tag
+        // ("electric car") contributes each of its words as a matchable token.
+        // Adding the tag verbatim instead would glue the words into one token
+        // that no tokenized query term can ever match, silently dropping the
+        // tag from recall.
+        foreach (var tag in m.Tags) itemTokens.UnionWith(Tokenize(tag));
         return Jaccard(queryTokens, itemTokens);
     }
 
@@ -417,8 +422,6 @@ class MemoryAugmentedAgent
         sb.Clear();
         if (token.Length > 1 && !StopWords.Contains(token)) set.Add(token);
     }
-
-    private static string Normalize(string s) => s.Trim().ToLowerInvariant();
 
     private static IReadOnlyList<string> MergeTags(IReadOnlyList<string> a, IReadOnlyList<string> b)
     {
