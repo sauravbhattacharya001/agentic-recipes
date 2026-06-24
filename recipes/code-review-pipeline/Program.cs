@@ -16,10 +16,14 @@ public static class Program
 {
     public static async Task Main(string[] args)
     {
-        // Read code from file argument or use sample
-        var code = args.Length > 0 && File.Exists(args[0])
-            ? await File.ReadAllTextAsync(args[0])
-            : SampleCode;
+        // Resolve the code to review: file argument → piped stdin → bundled
+        // sample, in that order. (The README documents the stdin path, so it
+        // must actually be honored rather than silently falling through to the
+        // sample.)
+        var stdinText = Console.IsInputRedirected
+            ? await Console.In.ReadToEndAsync()
+            : null;
+        var code = ResolveInput(args, stdinText, SampleCode);
 
         Console.WriteLine("═══ Code Review Pipeline ═══");
         Console.WriteLine($"Input: {code.Split('\n').Length} lines of code");
@@ -182,6 +186,31 @@ public static class Program
         Console.WriteLine($"  Total tokens (est): {metrics.TotalTokens()}");
         Console.WriteLine($"  Error rate: {metrics.ErrorRate():P0}");
         Console.WriteLine($"  Log entries: {logs.Count}");
+    }
+
+    /// <summary>
+    /// Decide which code to review, applying a clear precedence so the
+    /// documented inputs behave predictably:
+    /// <list type="number">
+    ///   <item>a readable file path passed as the first argument;</item>
+    ///   <item>otherwise non-empty text piped in on stdin;</item>
+    ///   <item>otherwise the bundled sample.</item>
+    /// </list>
+    /// Pure and side-effect free (I/O is read by the caller) so the precedence
+    /// can be unit-tested without touching the console or the file system.
+    /// </summary>
+    /// <param name="args">Process arguments; <c>args[0]</c> may be a file path.</param>
+    /// <param name="stdinText">Text already read from stdin, or <c>null</c> when stdin was not redirected.</param>
+    /// <param name="sample">Fallback used when neither a file argument nor piped input is available.</param>
+    internal static string ResolveInput(string[] args, string? stdinText, string sample)
+    {
+        if (args is { Length: > 0 } && !string.IsNullOrWhiteSpace(args[0]) && File.Exists(args[0]))
+            return File.ReadAllText(args[0]);
+
+        if (!string.IsNullOrWhiteSpace(stdinText))
+            return stdinText;
+
+        return sample;
     }
 
     /// <summary>

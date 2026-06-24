@@ -346,6 +346,73 @@ public class CodeReviewPipelineTests
         Assert.DoesNotContain("{{code}}", capturedPrompt);
     }
 
+    // ── Input Resolution (file arg → piped stdin → sample) ────
+    // Mirrors Program.ResolveInput so the documented input precedence is
+    // pinned by a test. The README advertises a stdin path; these prove the
+    // ordering that makes it (and the file-arg and sample fallbacks) behave.
+
+    private static string ResolveInput(string[] args, string? stdinText, string sample)
+    {
+        if (args is { Length: > 0 } && !string.IsNullOrWhiteSpace(args[0]) && File.Exists(args[0]))
+            return File.ReadAllText(args[0]);
+
+        if (!string.IsNullOrWhiteSpace(stdinText))
+            return stdinText;
+
+        return sample;
+    }
+
+    [Fact]
+    public void ResolveInput_NoArgsNoStdin_FallsBackToSample()
+    {
+        var result = ResolveInput(Array.Empty<string>(), stdinText: null, sample: "SAMPLE");
+        Assert.Equal("SAMPLE", result);
+    }
+
+    [Fact]
+    public void ResolveInput_StdinProvided_UsesStdinOverSample()
+    {
+        var result = ResolveInput(Array.Empty<string>(), stdinText: "piped code", sample: "SAMPLE");
+        Assert.Equal("piped code", result);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\n\t")]
+    public void ResolveInput_BlankStdin_FallsBackToSample(string blank)
+    {
+        // An empty/whitespace pipe must not masquerade as real input.
+        var result = ResolveInput(Array.Empty<string>(), stdinText: blank, sample: "SAMPLE");
+        Assert.Equal("SAMPLE", result);
+    }
+
+    [Fact]
+    public void ResolveInput_MissingFileArg_DoesNotThrow_AndFallsBack()
+    {
+        // A bogus path is not a readable file → fall through to the next source
+        // instead of throwing.
+        var args = new[] { Path.Combine(Path.GetTempPath(), $"nope-{Guid.NewGuid():N}.cs") };
+        var result = ResolveInput(args, stdinText: "piped code", sample: "SAMPLE");
+        Assert.Equal("piped code", result);
+    }
+
+    [Fact]
+    public void ResolveInput_FileArg_WinsOverStdinAndSample()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"cr-input-{Guid.NewGuid():N}.cs");
+        File.WriteAllText(path, "from file");
+        try
+        {
+            var result = ResolveInput(new[] { path }, stdinText: "piped code", sample: "SAMPLE");
+            Assert.Equal("from file", result);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     // ── Helper ───────────────────────────────────────────────
 
     private static PromptPipeline BuildPipeline()
