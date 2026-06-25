@@ -14,7 +14,7 @@ using System.Text.Json;
 var weatherTool = new AgentTool(
     "get_weather",
     "Get current weather for a city. Returns temperature and conditions.",
-    async (argsJson, ct) =>
+    (argsJson, ct) =>
     {
         var args = JsonDocument.Parse(argsJson).RootElement;
         var city = args.GetProperty("city").GetString()!;
@@ -26,14 +26,14 @@ var weatherTool = new AgentTool(
             "miami" => new { temp = 88, condition = "partly cloudy", humidity = 85 },
             _ => new { temp = 70, condition = "clear", humidity = 50 }
         };
-        return JsonSerializer.Serialize(data);
+        return Task.FromResult(JsonSerializer.Serialize(data));
     })
     .AddParameter("city", "string", "City name", required: true);
 
 var calculatorTool = new AgentTool(
     "calculate",
     "Evaluate a mathematical expression. Returns the numeric result.",
-    async (argsJson, ct) =>
+    (argsJson, ct) =>
     {
         var args = JsonDocument.Parse(argsJson).RootElement;
         var expression = args.GetProperty("expression").GetString()!;
@@ -45,26 +45,26 @@ var calculatorTool = new AgentTool(
             "(105 + 88 + 62) / 3" => 85,
             _ => 0
         };
-        return result.ToString();
+        return Task.FromResult(result.ToString());
     })
     .AddParameter("expression", "string", "Math expression to evaluate", required: true);
 
 var searchTool = new AgentTool(
     "search",
     "Search for information on a topic. Returns relevant facts.",
-    async (argsJson, ct) =>
+    (argsJson, ct) =>
     {
         var args = JsonDocument.Parse(argsJson).RootElement;
         var query = args.GetProperty("query").GetString()!;
         // Simulated search
-        return query.ToLower() switch
+        return Task.FromResult(query.ToLower() switch
         {
             var q when q.Contains("population") && q.Contains("seattle") =>
                 "Seattle population: approximately 750,000 (city), 4 million (metro area)",
             var q when q.Contains("population") && q.Contains("phoenix") =>
                 "Phoenix population: approximately 1.6 million (city), 4.9 million (metro area)",
             _ => $"No results found for: {query}"
-        };
+        });
     })
     .AddParameter("query", "string", "Search query", required: true);
 
@@ -96,12 +96,12 @@ agent.AddTool(searchTool);
 // 3. Simulate the model function
 // In production, this calls Azure OpenAI / OpenAI / Anthropic
 int turnCount = 0;
-async Task<string> SimulatedModel(List<ConversationMessage> messages, List<AgentTool> tools, CancellationToken ct)
+Task<string> SimulatedModel(List<ConversationMessage> messages, List<AgentTool> tools, CancellationToken ct)
 {
     turnCount++;
     
     // Simulate multi-turn reasoning
-    return turnCount switch
+    return Task.FromResult(turnCount switch
     {
         1 => @"[{""name"": ""get_weather"", ""arguments"": ""{\""city\"": \""Seattle\""}""},
                {""name"": ""get_weather"", ""arguments"": ""{\""city\"": \""Phoenix\""}""},
@@ -122,7 +122,7 @@ Phoenix is 43°F warmer than Seattle — the biggest spread among the three citi
 **Recommendation:** If you want warm and dry, Phoenix is your best bet. For moderate weather, Seattle. For warm and humid, Miami.",
         
         _ => "Done!"
-    };
+    });
 }
 
 // 4. Run the agent
