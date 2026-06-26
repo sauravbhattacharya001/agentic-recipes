@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Prompt;
 using Xunit;
 
@@ -294,6 +295,50 @@ public class MultiPerspectiveTests
         Assert.Contains("flowchart", mermaid);
         Assert.Contains("input", mermaid);
         Assert.Contains("aggregator", mermaid);
+    }
+
+    [Fact]
+    public async Task GenerateText_ProducesPlainSummary()
+    {
+        var orchestrator = new PromptOrchestrator(async prompt =>
+        {
+            await Task.Delay(1);
+            return "response";
+        });
+
+        var plan = BuildPlan();
+        var execution = await orchestrator.ExecuteAsync(plan,
+            new Dictionary<string, string> { ["topic"] = "text test" });
+
+        var text = OrchestratorReport.GenerateText(execution);
+        // A plain-text summary that names every node and reports the final status.
+        Assert.False(string.IsNullOrWhiteSpace(text));
+        Assert.Contains("input", text);
+        Assert.Contains("aggregator", text);
+        Assert.Contains(execution.Status.ToString(), text);
+    }
+
+    [Fact]
+    public async Task GenerateJson_ProducesParseableExport()
+    {
+        var orchestrator = new PromptOrchestrator(async prompt =>
+        {
+            await Task.Delay(1);
+            return "response";
+        });
+
+        var plan = BuildPlan();
+        var execution = await orchestrator.ExecuteAsync(plan,
+            new Dictionary<string, string> { ["topic"] = "json test" });
+
+        var json = OrchestratorReport.GenerateJson(execution);
+        // Must be a real, well-formed JSON export of the execution (not just a string).
+        Assert.False(string.IsNullOrWhiteSpace(json));
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
+        // The raw JSON should carry the node ids and final status it exports.
+        Assert.Contains("aggregator", json);
+        Assert.Contains(execution.Status.ToString(), json);
     }
 
     // ── Helper ───────────────────────────────────────────────
