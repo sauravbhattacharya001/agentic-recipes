@@ -289,7 +289,15 @@ class ReflexionAgent
         var stuckPatience = Math.Max(1, _options.StuckPatience);
 
         var trials = new List<ReflexionTrial>();
-        var reflections = new List<string>();   // episodic memory of verbal lessons
+        var reflections = new List<string>();   // episodic memory of verbal lessons (bounded)
+        // Every lesson ever learned, independent of the bounded `reflections` window.
+        // Novelty (and therefore the stuck-loop stop) is judged against the FULL history,
+        // not the eviction-trimmed window: otherwise a tight MaxReflections could evict an
+        // old lesson, the reflector could re-propose it, it would look "new" against the
+        // shrunken window, reset the stuck counter, and the agent would burn its whole
+        // trial budget re-learning lessons it keeps forgetting — the exact loop this
+        // pattern promises to bail out of.
+        var seenLessons = new HashSet<string>(StringComparer.Ordinal);
 
         string bestAction = "";
         double bestReward = double.NegativeInfinity;
@@ -311,7 +319,11 @@ class ReflexionAgent
             if (!solved)
             {
                 lesson = await reflect(task, action, evaluation, reflections.AsReadOnly(), ct);
-                if (!string.IsNullOrWhiteSpace(lesson) && !reflections.Contains(lesson))
+                // `seenLessons.Add` returns false for anything already learned at any point,
+                // so a lesson that was evicted from the bounded window and then re-proposed
+                // still counts as "nothing new" — it neither re-enters memory nor resets the
+                // stuck streak.
+                if (!string.IsNullOrWhiteSpace(lesson) && seenLessons.Add(lesson))
                 {
                     reflections.Add(lesson);
                     // Bound episodic memory: drop the oldest lesson(s) until at/under

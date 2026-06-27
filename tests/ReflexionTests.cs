@@ -349,6 +349,43 @@ public class ReflexionTests
     }
 
     [Fact]
+    public async Task SolveAsync_TightMemoryReproposingEvictedLesson_StillStops()
+    {
+        // Regression: the stuck-loop stop must be judged against every lesson ever
+        // learned, not the eviction-trimmed memory window. With a cap of 1, learning
+        // lesson B evicts lesson A; a reflector that then re-proposes the *evicted* A
+        // used to look like fresh insight (A was no longer in the window), reset the
+        // stuck streak, and let the agent burn its whole MaxTrials budget oscillating
+        // A → B → A → B forever. It must instead recognise both lessons as already-seen
+        // and bail out as Stuck.
+        const string lessonA = "Lesson: A";
+        const string lessonB = "Lesson: B";
+
+        var agent = new ReflexionAgent(new ReflexionOptions
+        {
+            MaxTrials = 8,           // generous budget the bug would have exhausted
+            RewardThreshold = 1.0,   // never solves
+            MaxReflections = 1,      // window holds a single lesson -> forces eviction
+            StuckPatience = 2
+        });
+
+        var result = await agent.SolveAsync(
+            "task",
+            actor: (t, lessons, i) => $"v{i}",
+            evaluate: (t, a) => new ReflexionEvaluation(0.5, false, "half", new List<string> { "x" }),
+            // Propose whichever lesson is NOT currently in the (size-1) window, so the
+            // bounded-window membership check can never block it. Only a full-history
+            // novelty check can recognise the repeat.
+            reflect: (t, a, e, prior) => prior.Contains(lessonA) ? lessonB : lessonA);
+
+        Assert.Equal(ReflexionOutcome.Stuck, result.Outcome);
+        Assert.False(result.Solved);
+        // Trial 1 learns A (streak 0), trial 2 learns B (streak 0), trials 3 & 4 only
+        // re-propose already-seen lessons (streak 1, then 2) -> stuck. Far short of 8.
+        Assert.Equal(4, result.Trials.Count);
+    }
+
+    [Fact]
     public async Task SolveAsync_OnTrial_FiresOncePerTrial()
     {
         var observed = new List<int>();
@@ -544,6 +581,10 @@ class ReflexionAgent
 
         var trials = new List<ReflexionTrial>();
         var reflections = new List<string>();
+        // Novelty (and the stuck-loop stop) is judged against every lesson ever learned,
+        // not the eviction-trimmed `reflections` window — so a re-proposed evicted lesson
+        // does not masquerade as "new" and reset the stuck counter.
+        var seenLessons = new HashSet<string>(StringComparer.Ordinal);
 
         string bestAction = "";
         double bestReward = double.NegativeInfinity;
@@ -564,7 +605,7 @@ class ReflexionAgent
             if (!solved)
             {
                 lesson = await reflect(task, action, evaluation, reflections.AsReadOnly(), ct);
-                if (!string.IsNullOrWhiteSpace(lesson) && !reflections.Contains(lesson))
+                if (!string.IsNullOrWhiteSpace(lesson) && seenLessons.Add(lesson))
                 {
                     reflections.Add(lesson);
                     while (reflections.Count > maxReflections)
