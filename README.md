@@ -99,6 +99,7 @@ dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
 
 The Cobertura report is written under `TestResults/`. Current coverage is ~99%
 line / ~94% branch over the recipe logic.
+
 ## Adding a Recipe
 
 1. Create a folder under `recipes/`

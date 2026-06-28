@@ -283,6 +283,86 @@ public class MultiAgentDebateTests
         Assert.Equal(0, result.Transcript[0].Round);
         Assert.Equal(1, result.Transcript[1].Round);
     }
+
+    // ── Three+ debaters ───────────────────────────────────────
+    // The README advertises "two or more agents", and the orchestrator is
+    // written for N debaters (the runner-up in CurrentLead is the 2nd of N,
+    // convergence is "one distinct answer across all of them", and several
+    // debaters can pile weight onto the same answer). The cases below lock in
+    // that N-debater contract, which the two-debater tests above can't express.
+
+    [Fact]
+    public async Task ThreeDebaters_AllAgree_Converges()
+    {
+        // Every move lands on the same answer in round 1 -> convergence needs
+        // ALL three to match, not just a pair.
+        var a = Scripted("A", new DebateArgument("a", "green", 0.7));
+        var b = Scripted("B", new DebateArgument("b", "green", 0.6));
+        var c = Scripted("C", new DebateArgument("c", "green", 0.8));
+
+        var orch = new DebateOrchestrator(new DebateOptions { MaxRounds = 4 });
+        var result = await orch.RunAsync("color?", new[] { a, b, c }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Converged, result.Verdict);
+        Assert.Equal("green", result.Answer);
+        Assert.Null(result.Winner);
+        Assert.Equal(1, result.RoundsUsed);
+        Assert.Equal(3, result.Transcript[0].Moves.Count);
+        Assert.Equal(3, result.Standings.Count);
+    }
+
+    [Fact]
+    public async Task ThreeDebaters_TwoAgreeOneDissents_DoesNotConverge()
+    {
+        // A majority (two share "merge") is NOT consensus while a third holds out:
+        // distinctAnswers stays > 1, so the debate must not settle on convergence.
+        // Neither does the A-vs-B margin separate (they're neck-and-neck), so with
+        // a short budget it ends Hung rather than faking agreement.
+        var a = Scripted("A", new DebateArgument("merge", "merge", 0.6));
+        var b = Scripted("B", new DebateArgument("merge too", "merge", 0.6));
+        var c = Scripted("C", new DebateArgument("split", "split", 0.55));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 3,
+            DecisiveMargin = 0.34,
+            StableLeadRounds = 2,
+        });
+        var result = await orch.RunAsync("q", new[] { a, b, c }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Hung, result.Verdict);
+        Assert.Null(result.Answer);
+        Assert.All(result.Transcript, ex => Assert.False(ex.Converged));
+        // "merge" outweighs "split" each round, so it's the leading answer even
+        // though the debate never formally converges on it.
+        Assert.Equal("merge", result.Transcript[^1].LeadingAnswer);
+        Assert.Equal(3, result.RoundsUsed);
+    }
+
+    [Fact]
+    public async Task ThreeDebaters_OneDominatesBothOthers_Decides()
+    {
+        // A clear, stable lead over the FIELD: A must out-score the runner-up
+        // (2nd of three) by the decisive margin for two consecutive rounds.
+        var a = Scripted("A", new DebateArgument("strong", "x", 0.95));
+        var b = Scripted("B", new DebateArgument("weak", "y", 0.20));
+        var c = Scripted("C", new DebateArgument("weaker", "z", 0.15));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 5,
+            DecisiveMargin = 0.34,
+            StableLeadRounds = 2,
+        });
+        var result = await orch.RunAsync("q", new[] { a, b, c }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Decided, result.Verdict);
+        Assert.Equal("A", result.Winner);
+        Assert.Equal("x", result.Answer);
+        Assert.Equal(2, result.RoundsUsed); // decisive from r0, stops once the streak hits 2
+        // Standings are ranked best-first across all three.
+        Assert.Equal(new[] { "A", "B", "C" }, result.Standings.Select(s => s.Debater).ToArray());
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
