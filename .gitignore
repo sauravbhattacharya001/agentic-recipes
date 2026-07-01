@@ -6,3 +6,7 @@ obj/
 TestResults/
 [Cc]overage*/
 *.cobertura.xml
+
+# Recipe runtime output (multi-perspective report exports)
+execution-flow.md
+execution-report.json

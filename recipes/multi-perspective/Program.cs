@@ -165,12 +165,24 @@ public static class Program
             Console.WriteLine(aggResult.Output);
         }
 
-        // ── Generate execution report ────────────────────────
+        // ── Generate execution reports ───────────────────────
+        // OrchestratorReport renders the same run four ways; show a plain-text
+        // summary and the Markdown report inline, then persist the machine-
+        // readable JSON export and the Mermaid flow diagram to disk.
+        Console.WriteLine();
+        Console.WriteLine("── Execution Report (text) ──");
+        Console.WriteLine(OrchestratorReport.GenerateText(execution));
+
         Console.WriteLine();
         Console.WriteLine("── Execution Report (Markdown) ──");
         Console.WriteLine(OrchestratorReport.GenerateMarkdown(execution));
 
-        // Save Mermaid diagram
+        // Save the JSON export (machine-readable) and the Mermaid diagram.
+        var json = OrchestratorReport.GenerateJson(execution);
+        await File.WriteAllTextAsync("execution-report.json", json);
+        Console.WriteLine();
+        Console.WriteLine("✓ JSON export saved to execution-report.json");
+
         var mermaid = OrchestratorReport.GenerateMermaid(execution);
         await File.WriteAllTextAsync("execution-flow.md", mermaid);
         Console.WriteLine("✓ Mermaid diagram saved to execution-flow.md");
