@@ -65,15 +65,10 @@ dotnet run --project recipes/tool-agent-loop
 
 - .NET 8 SDK
 - [`promptlib`](https://www.nuget.org/packages/promptlib) NuGet package (auto-restored)
-- Azure OpenAI endpoint + API key (for integration tests only)
 
-### Environment Variables (optional — for integration tests)
-
-```bash
-export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/"
-export AZURE_OPENAI_API_KEY="your-key"
-export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
-```
+No API keys or cloud endpoints are required. Each recipe mirrors its
+orchestration logic into the test assembly and drives it with injected,
+in-memory model stand-ins, so the whole suite runs deterministically offline.
 
 ## Tests
 
@@ -81,9 +76,9 @@ export AZURE_OPENAI_DEPLOYMENT="gpt-4o"  # optional, defaults to gpt-4o
 dotnet test
 ```
 
-The suite passes out of the box. 5 integration tests are skipped: they drive
-`PromptChain.RunAsync` against a live Azure OpenAI endpoint, so they are not run
-as part of the unit suite (see the environment variables above).
+The suite passes out of the box with **no skipped tests** and no external
+dependencies — every recipe's pattern is proven against a deterministic
+stand-in model rather than a live endpoint.
 
 ### Coverage
 
