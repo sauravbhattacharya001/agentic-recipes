@@ -224,6 +224,39 @@ public class PlanAndExecuteTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_NonStepException_StillRetriesAndFallsBack()
+    {
+        // The README's "Wiring to a real model" section promises the retry →
+        // fallback → skip → abort policy wraps whatever the step delegate does,
+        // so a flaky *tool* call is retried without that logic leaking into the
+        // step. A real tool throws ordinary framework exceptions
+        // (TimeoutException, HttpRequestException, …) — NOT the demo's
+        // StepException. This pins that the executor's catch is exception-type
+        // agnostic: a plain TimeoutException from the primary is retried within
+        // budget and then recovered via the fallback, exactly like StepException.
+        var primaryCalls = 0;
+        var plan = new Plan("g", new[]
+        {
+            new PlanStep("call_api", "",
+                run: (_, _) =>
+                {
+                    primaryCalls++;
+                    throw new TimeoutException("gateway timed out"); // not a StepException
+                },
+                fallback: (_, _) => "served-from-cache"),
+        });
+
+        var result = await Executor(retryBudget: 2).ExecuteAsync(plan, EchoStep);
+
+        Assert.Equal(3, primaryCalls); // 1 primary + 2 retries, all on a non-StepException
+        var step = Assert.Single(result.StepResults);
+        Assert.Equal(StepStatus.Recovered, step.Status);
+        Assert.Equal("served-from-cache", step.Output);
+        Assert.Equal("gateway timed out", step.Error); // surfaced the real exception message
+        Assert.True(result.GoalReached);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_FallbackAlsoFails_NonCritical_Skips()
     {
         var plan = new Plan("g", new[]
