@@ -88,6 +88,39 @@ public class IterativeRefinementTests
     }
 
     [Fact]
+    public async Task RefineAsync_PlateauPatience_IsConsecutive_ResetByAnImprovingRound()
+    {
+        // The README/StopReason.Plateaued contract is "non-improving rounds IN A ROW":
+        // an improving round must RESET the stale counter, so a stall streak that is
+        // interrupted does not accumulate toward the patience budget. Drive scores
+        // 10 → 20 → 22 → 40 → 42 → 44 with MinImprovement=5, PlateauPatience=2:
+        //   R2 +10 improves (stale=0)
+        //   R3 +2  stale    (stale=1)
+        //   R4 +18 improves → RESET (stale=0)   ← the branch under test
+        //   R5 +2  stale    (stale=1)
+        //   R6 +2  stale    (stale=2) → Plateaued
+        // If patience were CUMULATIVE it would have tripped at R5 (R3+R5 = 2 stale),
+        // stopping a round early. Reaching round 6 proves the reset happened.
+        var scores = new Queue<double>(new double[] { 10, 20, 22, 40, 42, 44 });
+        var refiner = new IterativeRefiner(new RefinerOptions
+        {
+            TargetScore = 1000,   // unreachable so only the plateau logic can stop it
+            MaxIterations = 10,   // higher than the 6 scores so the budget never ends it
+            MinImprovement = 5.0,
+            PlateauPatience = 2
+        });
+
+        var result = await refiner.RefineAsync(
+            "task",
+            generate: (t, fb, i) => $"v{i}",
+            critique: (t, draft) => new Critique(scores.Dequeue(), "fb", new List<string> { "issue" }));
+
+        Assert.Equal(StopReason.Plateaued, result.StopReason);
+        Assert.Equal(6, result.Iterations.Count); // not 5 — the R4 improvement reset the streak
+        Assert.Equal(44, result.BestScore);
+    }
+
+    [Fact]
     public async Task RefineAsync_ReturnsBestDraft_NotNecessarilyLast()
     {
         // Scores go 50 → 90 → 30: the peak is round 2, which must be returned
