@@ -165,6 +165,26 @@ public class SelfConsistencyTests
     }
 
     [Fact]
+    public void WeightByConfidence_ConsensusEqualsWinningVotesOverTotalWeight_Exactly()
+    {
+        // Regression: consensus must be computed from the RAW winner mass and total,
+        // not from the display-rounded tally. With repeating-decimal confidences the
+        // winner mass has >4 significant decimals, so rounding it before the division
+        // (the old bug) made Consensus disagree with both the true ratio AND the
+        // reported WinningVotes / TotalWeight. Pin all three to the same value.
+        var samples = new[] { S("A", 1.0 / 3.0), S("A", 1.0 / 3.0), S("B", 0.1) };
+        var r = Vote(samples, new EnsembleOptions { WeightByConfidence = true });
+
+        var expected = (2.0 / 3.0) / (2.0 / 3.0 + 0.1); // raw winner / raw total
+        Assert.Equal("A", r.Answer);
+        Assert.Equal(expected, r.Consensus, 12); // Consensus is exact, not display-rounded.
+        // WinningVotes / TotalWeight are rounded to 4 dp for display, so recomputing the
+        // ratio from them tracks Consensus to display precision (the old bug made them
+        // disagree because Consensus itself used a rounded numerator over a raw total).
+        Assert.Equal(r.Consensus, r.WinningVotes / r.TotalWeight, 3);
+    }
+
+    [Fact]
     public void WeightByConfidence_AllZeroConfidence_AbstainsInsteadOfDivideByZero()
     {
         var samples = new[] { S("A", 0.0), S("B", 0.0) };
@@ -395,31 +415,36 @@ class EnsembleVoter
             }
         }
 
-        var tally = order
-            .Select(k => (Key: k, Val: buckets[k]))
-            .OrderByDescending(x => x.Val.Votes)
-            .ThenBy(x => x.Val.FirstIndex)
-            .Select(x => new VoteTally(x.Val.Display, Round(x.Val.Votes), x.Val.Count))
+        var ranked = order
+            .Select(k => buckets[k])
+            .OrderByDescending(v => v.Votes)
+            .ThenBy(v => v.FirstIndex)
+            .ToList();
+
+        var tally = ranked
+            .Select(v => new VoteTally(v.Display, Round(v.Votes), v.Count))
             .ToList();
 
         var totalWeight = _options.WeightByConfidence
             ? samples.Sum(s => Math.Clamp(s.Confidence, 0.0, 1.0))
             : samples.Count;
 
-        var winner = tally[0];
+        var winner = ranked[0];
+        // Consensus is computed from the RAW (unrounded) winner mass and total so it
+        // never disagrees with the reported WinningVotes / TotalWeight.
         var consensus = totalWeight > 0 ? winner.Votes / totalWeight : 0.0;
 
         var verdict = consensus >= _options.ConfidentConsensus ? EnsembleVerdict.Confident
                     : consensus >= _options.MinConsensus ? EnsembleVerdict.Tentative
                     : EnsembleVerdict.Abstained;
 
-        var answer = verdict == EnsembleVerdict.Abstained ? null : winner.Answer;
+        var answer = verdict == EnsembleVerdict.Abstained ? null : winner.Display;
 
         return new EnsembleResult(
             Verdict: verdict,
             Answer: answer,
             Consensus: consensus,
-            WinningVotes: winner.Votes,
+            WinningVotes: Round(winner.Votes),
             TotalWeight: Round(totalWeight),
             Tally: tally,
             Samples: samples);

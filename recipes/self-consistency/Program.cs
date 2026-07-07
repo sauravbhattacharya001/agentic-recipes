@@ -252,34 +252,42 @@ class EnsembleVoter
             }
         }
 
-        // Tally, sorted by vote mass desc, then by first appearance (stable, deterministic).
-        var tally = order
-            .Select(k => (Key: k, Val: buckets[k]))
-            .OrderByDescending(x => x.Val.Votes)
-            .ThenBy(x => x.Val.FirstIndex)
-            .Select(x => new VoteTally(x.Val.Display, Round(x.Val.Votes), x.Val.Count))
+        // Rank buckets by RAW vote mass desc, then by first appearance (stable,
+        // deterministic). Ranking and consensus use the unrounded weights; rounding
+        // is applied only when projecting into the display tally below, so the
+        // reported Consensus stays exactly WinningVotes / TotalWeight.
+        var ranked = order
+            .Select(k => buckets[k])
+            .OrderByDescending(v => v.Votes)
+            .ThenBy(v => v.FirstIndex)
+            .ToList();
+
+        var tally = ranked
+            .Select(v => new VoteTally(v.Display, Round(v.Votes), v.Count))
             .ToList();
 
         var totalWeight = _options.WeightByConfidence
             ? samples.Sum(s => Math.Clamp(s.Confidence, 0.0, 1.0))
             : samples.Count;
 
-        var winner = tally[0];
-        // Consensus: winner share of total weight. Guard against an all-zero-confidence
-        // weighted ensemble (everyone maximally unsure) → treat as zero consensus.
+        var winner = ranked[0];
+        // Consensus: winner share of total weight, computed from the RAW (unrounded)
+        // winner mass and total so it never disagrees with the reported
+        // WinningVotes / TotalWeight. Guard against an all-zero-confidence weighted
+        // ensemble (everyone maximally unsure) → treat as zero consensus.
         var consensus = totalWeight > 0 ? winner.Votes / totalWeight : 0.0;
 
         var verdict = consensus >= _options.ConfidentConsensus ? EnsembleVerdict.Confident
                     : consensus >= _options.MinConsensus ? EnsembleVerdict.Tentative
                     : EnsembleVerdict.Abstained;
 
-        var answer = verdict == EnsembleVerdict.Abstained ? null : winner.Answer;
+        var answer = verdict == EnsembleVerdict.Abstained ? null : winner.Display;
 
         return new EnsembleResult(
             Verdict: verdict,
             Answer: answer,
             Consensus: consensus,
-            WinningVotes: winner.Votes,
+            WinningVotes: Round(winner.Votes),
             TotalWeight: Round(totalWeight),
             Tally: tally,
             Samples: samples);
