@@ -146,6 +146,10 @@ Console.WriteLine("knowledge base doesn't contain the answer — no hallucinatio
 record Document(string Id, string Text);
 
 /// <summary>One indexed slice of a document plus its term-frequency vector.</summary>
+/// <param name="DocumentId">The id of the source document this slice came from.</param>
+/// <param name="Index">This slice's 0-based ordinal <b>within its own document</b>, so a
+/// citation like <c>warranty#0</c> names the first chunk of the warranty doc. (It is not a
+/// corpus-global counter — that would make <c>warranty#4</c> point past a two-chunk document.)</param>
 record Chunk(string DocumentId, int Index, string Text, IReadOnlyDictionary<string, int> TermFreq);
 
 /// <summary>A chunk retrieved for a query, with its similarity score and citation number.</summary>
@@ -205,10 +209,13 @@ class RagPipeline
             var words = SplitWords(doc.Text);
             if (words.Count == 0) continue;
 
+            // Number chunks per-document so a citation's "#N" is the slice's position
+            // within THIS document, not its slot in the global corpus.
+            var indexInDoc = 0;
             foreach (var (text, termFreq) in ChunkWords(words))
             {
                 if (termFreq.Count == 0) continue; // skip chunks that are all stop-words
-                var chunk = new Chunk(doc.Id, _chunks.Count, text, termFreq);
+                var chunk = new Chunk(doc.Id, indexInDoc++, text, termFreq);
                 _chunks.Add(chunk);
                 foreach (var term in termFreq.Keys)
                     _docFreq[term] = _docFreq.GetValueOrDefault(term) + 1;

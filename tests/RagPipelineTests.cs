@@ -72,11 +72,28 @@ public class RagPipelineTests
     }
 
     [Fact]
-    public void Chunk_IndicesAreContiguous()
+    public void Chunk_IndicesAreContiguousPerDocument()
     {
+        // A chunk's Index is its ordinal WITHIN its own document, restarting at 0
+        // for each document — so the "doc#N" citation names a real in-document position.
         var rag = Build(new RagOptions { ChunkSize = 6, ChunkOverlap = 2 });
-        for (var i = 0; i < rag.ChunkCount; i++)
-            Assert.Equal(i, rag.Chunks[i].Index);
+        foreach (var group in rag.Chunks.GroupBy(c => c.DocumentId))
+        {
+            var expected = 0;
+            foreach (var chunk in group)
+                Assert.Equal(expected++, chunk.Index);
+        }
+    }
+
+    [Fact]
+    public void Chunk_EachDocumentStartsAtIndexZero()
+    {
+        // Regression: Index must not be a corpus-global counter. Every document's
+        // first surviving chunk is #0, so citations like "warranty#0" are truthful
+        // even when the doc is indexed after others.
+        var rag = Build(new RagOptions { ChunkSize = 6, ChunkOverlap = 2 });
+        foreach (var group in rag.Chunks.GroupBy(c => c.DocumentId))
+            Assert.Equal(0, group.Min(c => c.Index));
     }
 
     // ── Retrieval ────────────────────────────────────────────
@@ -336,10 +353,11 @@ class RagPipeline
             var words = SplitWords(doc.Text);
             if (words.Count == 0) continue;
 
+            var indexInDoc = 0;
             foreach (var (text, termFreq) in ChunkWords(words))
             {
                 if (termFreq.Count == 0) continue;
-                var chunk = new Chunk(doc.Id, _chunks.Count, text, termFreq);
+                var chunk = new Chunk(doc.Id, indexInDoc++, text, termFreq);
                 _chunks.Add(chunk);
                 foreach (var term in termFreq.Keys)
                     _docFreq[term] = _docFreq.GetValueOrDefault(term) + 1;
