@@ -253,11 +253,20 @@ enum ToTOutcome
 {
     /// <summary>A state reached the solved threshold (or was flagged solved).</summary>
     Solved,
-    /// <summary>The frontier emptied with no node left to expand (everything pruned/dead-ended).</summary>
+    /// <summary>
+    /// The frontier emptied with no node left to expand because branches were pruned
+    /// below the floor or dead-ended (the expander returned no children). This is the
+    /// general "ran out of survivors" outcome, and also covers a mixed exhaustion where
+    /// some branches were pruned/dead-ended while others hit the depth ceiling.
+    /// </summary>
     FrontierExhausted,
     /// <summary>The expansion budget (MaxExpansions) was spent.</summary>
     BudgetExhausted,
-    /// <summary>Every open branch hit the depth limit before solving.</summary>
+    /// <summary>
+    /// The depth ceiling was the SOLE reason the search stopped short: at least one open
+    /// branch hit <c>MaxDepth</c> and nothing was ever pruned or dead-ended. If any branch
+    /// was pruned/dead-ended, the outcome is the more general <see cref="FrontierExhausted"/>.
+    /// </summary>
     DepthLimited
 }
 
@@ -306,8 +315,9 @@ record TreeOfThoughtsResult(
 /// nodes on the frontier. Because the frontier is re-ranked after every
 /// expansion, a stalled branch yields to a better-scoring sibling - the search
 /// BACKTRACKS rather than marching down one limb. It stops on its own when a
-/// state is solved, the frontier empties, the depth limit boxes in every branch,
-/// or the expansion budget runs out.
+/// state is solved, the frontier empties (branches pruned or dead-ended), the
+/// depth ceiling alone boxes in the remaining branches, or the expansion budget
+/// runs out.
 ///
 /// The expander and evaluator are injected delegates, so the control flow can be
 /// exercised deterministically in tests and wired to real LLM / tool calls in
@@ -372,7 +382,8 @@ class TreeOfThoughtsAgent
         // it ranked by score; breadth-first treats it as a FIFO queue.
         var frontier = new List<SearchNode> { root };
         var outcome = ToTOutcome.FrontierExhausted;
-        var anyDepthCapped = false;
+        var anyDepthCapped = false;      // some open branch could not grow past MaxDepth
+        var anyPrunedOrDeadEnd = false;  // some below-max branch produced zero survivors
 
         while (frontier.Count > 0)
         {
@@ -423,14 +434,24 @@ class TreeOfThoughtsAgent
                 children.Add(child);
             }
 
+            // A below-max node that yielded no surviving children (all pruned, or the
+            // expander dead-ended) is a frontier-exhaustion cause, distinct from a
+            // branch that simply ran into the depth ceiling.
+            if (children.Count == 0)
+                anyPrunedOrDeadEnd = true;
+
             // Add the survivors and re-apply the beam: keep only the best
             // `beamWidth` OPEN nodes overall so the tree stays bounded.
             frontier.AddRange(children);
             ApplyBeam(frontier, beamWidth);
         }
 
-        // Distinguish "boxed in by depth" from "everything pruned away".
-        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !bestNode.Solved)
+        // Report DepthLimited only when the depth ceiling was the SOLE thing that
+        // stopped the search: a branch hit MaxDepth and nothing was ever pruned or
+        // dead-ended. If any branch was pruned/dead-ended (even while an unrelated
+        // node also hit MaxDepth), the honest label is the general FrontierExhausted
+        // rather than blaming depth.
+        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !anyPrunedOrDeadEnd && !bestNode.Solved)
             outcome = ToTOutcome.DepthLimited;
 
         return Build(bestNode, outcome, explored, nodesExpanded, nodesEvaluated);

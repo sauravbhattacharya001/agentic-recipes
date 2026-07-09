@@ -178,6 +178,95 @@ public class TreeOfThoughtsTests
     }
 
     [Fact]
+    public async Task SearchAsync_FrontierEmptiedByPruning_ReportsFrontierExhausted_EvenWhenAnUnrelatedNodeHitMaxDepth()
+    {
+        // Regression: DepthLimited must be reserved for when the depth ceiling is the
+        // SOLE reason the search stalled. Here a high-scoring branch reaches MaxDepth
+        // (so a node IS depth-capped), but the frontier ultimately empties because a
+        // DIFFERENT, lower-scoring branch has ALL its children pruned below the floor.
+        // Since pruning - not depth - drained the frontier, the honest outcome is the
+        // general FrontierExhausted, not DepthLimited. The old code reported
+        // DepthLimited whenever any node had ever hit MaxDepth, conflating the two.
+        //
+        // Graph (best-first, MaxDepth 2, PruneThreshold 0.30):
+        //   root(0.10) -> HI(0.90, d1), LO(0.50, d1)          both clear the floor
+        //   expand HI  -> HI-DEEP(0.80, d2)                    survives, enqueued
+        //   pop HI-DEEP: d2 >= MaxDepth 2 -> depth-capped (sets anyDepthCapped)
+        //   expand LO  -> LO-A(0.10), LO-B(0.20)               BOTH below 0.30 -> pruned
+        //   frontier now empty: the terminal cause was LO's pruning, not depth.
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 4,
+            MaxDepth = 2,
+            MaxExpansions = 50,
+            PruneThreshold = 0.30,
+            Strategy = SearchStrategy.BestFirst,
+        });
+
+        var result = await agent.SearchAsync(
+            rootThought: "root",
+            expand: (thought, depth) => thought switch
+            {
+                "root" => new[]
+                {
+                    new ThoughtExpansion("to-hi", "HI"),
+                    new ThoughtExpansion("to-lo", "LO"),
+                },
+                "HI" => new[] { new ThoughtExpansion("hi-deeper", "HI-DEEP") },
+                "LO" => new[]
+                {
+                    new ThoughtExpansion("lo-a", "LO-A"),   // pruned (0.10 < 0.30)
+                    new ThoughtExpansion("lo-b", "LO-B"),   // pruned (0.20 < 0.30)
+                },
+                _ => Array.Empty<ThoughtExpansion>(),
+            },
+            evaluate: (state, depth) => state switch
+            {
+                "HI" => new ThoughtEvaluation(0.90, false, "promising"),
+                "HI-DEEP" => new ThoughtEvaluation(0.80, false, "still promising but at the cap"),
+                "LO" => new ThoughtEvaluation(0.50, false, "middling"),
+                "LO-A" => new ThoughtEvaluation(0.10, false, "weak"),
+                "LO-B" => new ThoughtEvaluation(0.20, false, "weak"),
+                _ => new ThoughtEvaluation(0.10, false, "root"),
+            });
+
+        // Pruning drained the frontier while an unrelated node was merely depth-capped:
+        // the outcome must be FrontierExhausted, NOT DepthLimited.
+        Assert.Equal(ToTOutcome.FrontierExhausted, result.Outcome);
+        Assert.False(result.Solved);
+        // Sanity: a node really did reach the depth cap (so the old code WOULD have
+        // mislabeled this as DepthLimited).
+        Assert.Contains(result.Explored, n => n.State == "HI-DEEP" && n.Depth == 2);
+    }
+
+    [Fact]
+    public async Task SearchAsync_DepthLimited_RequiresNoPruningOrDeadEnds()
+    {
+        // Complements the regression above: when the ONLY thing stopping the search is
+        // the depth ceiling (nothing is pruned, no branch dead-ends), the outcome is
+        // DepthLimited. PruneThreshold 0.0 means no reachable score is ever pruned, and
+        // the expander always returns children, so depth is the sole binding constraint.
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 4,
+            MaxDepth = 2,
+            MaxExpansions = 50,
+            PruneThreshold = 0.0,
+            SolvedThreshold = 2.0,   // unreachable, so it never "solves"
+        });
+
+        var result = await agent.SearchAsync(
+            "",
+            ArithmeticExpander,
+            evaluate: (state, depth) => new ThoughtEvaluation(0.5, false, "flat, never solves"));
+
+        Assert.Equal(ToTOutcome.DepthLimited, result.Outcome);
+        Assert.False(result.Solved);
+        // Every explored non-root node sits within the depth cap.
+        Assert.All(result.Explored.Where(n => n.Depth > 0), n => Assert.True(n.Depth <= 2));
+    }
+
+    [Fact]
     public async Task SearchAsync_BeamWidth_BoundsTheOpenFrontier()
     {
         // With beam width 1 and a never-solving evaluator, each round keeps exactly
@@ -590,6 +679,7 @@ class TreeOfThoughtsAgent
         var frontier = new List<SearchNode> { root };
         var outcome = ToTOutcome.FrontierExhausted;
         var anyDepthCapped = false;
+        var anyPrunedOrDeadEnd = false;
 
         while (frontier.Count > 0)
         {
@@ -636,11 +726,14 @@ class TreeOfThoughtsAgent
                 children.Add(child);
             }
 
+            if (children.Count == 0)
+                anyPrunedOrDeadEnd = true;
+
             frontier.AddRange(children);
             ApplyBeam(frontier, beamWidth);
         }
 
-        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !bestNode.Solved)
+        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !anyPrunedOrDeadEnd && !bestNode.Solved)
             outcome = ToTOutcome.DepthLimited;
 
         return Build(bestNode, outcome, explored, nodesExpanded, nodesEvaluated);
