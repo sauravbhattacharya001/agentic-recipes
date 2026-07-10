@@ -303,7 +303,19 @@ class PromptRouter
         CancellationToken ct = default)
     {
         var classification = await ClassifyAsync(message, classifierFunc, ct);
-        var handler = handlers[classification.Route];
+
+        // The classification vocabulary (RouterOptions.Routes) and the executable
+        // branch handlers are separate config and can legitimately diverge - a route
+        // may be classifiable yet have no handler wired up. Indexing handlers[...]
+        // directly would throw KeyNotFoundException and crash the router, breaking the
+        // documented "never crash; fall back" contract. Prefer the chosen route's
+        // handler, then the fallback route's; only if neither exists do we surface a
+        // clear configuration error instead of a bare KeyNotFoundException.
+        if (!handlers.TryGetValue(classification.Route, out var handler) &&
+            !handlers.TryGetValue(_options.FallbackRoute, out handler))
+            throw new InvalidOperationException(
+                $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
+
         var response = await branchFunc(handler.SystemPrompt, message, ct);
         return (classification, response);
     }

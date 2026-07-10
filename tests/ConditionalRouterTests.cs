@@ -252,6 +252,49 @@ public class ConditionalRouterTests
     }
 
     [Fact]
+    public async Task RouteAsync_ChosenRouteHasNoHandler_UsesFallbackHandler()
+    {
+        var router = CreateRouter();
+        // "technical" is a valid classification route but is intentionally NOT wired
+        // up as a handler - the router must degrade to the fallback handler, not crash.
+        var handlers = new Dictionary<string, RouteHandler>
+        {
+            ["general"] = new("General", "general prompt", 3, 0)
+        };
+
+        var (classification, response) = await router.RouteAsync(
+            "my app crashed",
+            classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.9, "crash"),
+            branchFunc: (sys, msg, ct) => Task.FromResult($"Used: {sys}"),
+            handlers: handlers);
+
+        Assert.Equal("technical", classification.Route);
+        Assert.Contains("general prompt", response);
+    }
+
+    [Fact]
+    public async Task RouteAsync_NoHandlerAndNoFallbackHandler_ThrowsClearError()
+    {
+        var router = CreateRouter();
+        var handlers = new Dictionary<string, RouteHandler>
+        {
+            ["billing"] = new("Billing", "billing prompt", 2, 0)
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await router.RouteAsync(
+                "my app crashed",
+                classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.9, "crash"),
+                branchFunc: (sys, msg, ct) => Task.FromResult("unreachable"),
+                handlers: handlers));
+
+        // Clear, actionable message naming both the chosen and fallback route -
+        // never a bare KeyNotFoundException.
+        Assert.Contains("technical", ex.Message);
+        Assert.Contains("general", ex.Message);
+    }
+
+    [Fact]
     public async Task ClassifyAsync_CustomFallbackRoute_UsesConfigured()
     {
         var router = new PromptRouter(new RouterOptions
@@ -366,7 +409,13 @@ class PromptRouter
         CancellationToken ct = default)
     {
         var classification = await ClassifyAsync(message, classifierFunc, ct);
-        var handler = handlers[classification.Route];
+        // Fall back to the fallback route's handler if the chosen route has none;
+        // only throw a clear error if neither is registered (never a bare
+        // KeyNotFoundException, per the graceful-degradation contract).
+        if (!handlers.TryGetValue(classification.Route, out var handler) &&
+            !handlers.TryGetValue(_options.FallbackRoute, out handler))
+            throw new InvalidOperationException(
+                $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
         var response = await branchFunc(handler.SystemPrompt, message, ct);
         return (classification, response);
     }

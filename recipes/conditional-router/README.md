@@ -67,6 +67,7 @@ Each route has its own:
 - Invalid JSON from classifier → fallback route
 - Unknown route name → fallback route  
 - Low confidence → fallback route
+- Chosen route has no registered handler → fallback handler
 - All failures are logged, never crash
 
 ## Running
