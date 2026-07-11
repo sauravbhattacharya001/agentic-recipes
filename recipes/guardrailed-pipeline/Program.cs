@@ -238,22 +238,12 @@ class GuardrailPipeline
             var matches = pattern.Matches(sanitized);
             if (matches.Count == 0) continue;
 
-            // credit_card: ignore short runs that are just spaced digits with <13 digits
-            var realHits = 0;
-            foreach (Match m in matches)
-            {
-                if (label == "credit_card")
-                {
-                    var digits = m.Value.Count(char.IsDigit);
-                    if (digits < 13) continue;
-                }
-                realHits++;
-            }
-            if (realHits == 0) continue;
-
+            // The credit_card pattern already requires 13–16 digits (one digit
+            // plus 12–15 more), so every match here is a real hit — no extra
+            // per-match length filtering is needed.
             pii = true;
             var sev = label is "api_key" or "credit_card" ? Severity.High : Severity.Medium;
-            Report(new Finding("pii", sev, $"{realHits}× {label}"));
+            Report(new Finding("pii", sev, $"{matches.Count}× {label}"));
 
             if (_options.RedactPii)
                 sanitized = pattern.Replace(sanitized, mask);

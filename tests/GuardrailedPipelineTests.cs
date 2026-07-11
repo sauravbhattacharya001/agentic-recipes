@@ -372,21 +372,9 @@ class GuardrailPipeline
             var matches = pattern.Matches(sanitized);
             if (matches.Count == 0) continue;
 
-            var realHits = 0;
-            foreach (Match m in matches)
-            {
-                if (label == "credit_card")
-                {
-                    var digits = m.Value.Count(char.IsDigit);
-                    if (digits < 13) continue;
-                }
-                realHits++;
-            }
-            if (realHits == 0) continue;
-
             pii = true;
             var sev = label is "api_key" or "credit_card" ? Severity.High : Severity.Medium;
-            Report(new Finding("pii", sev, $"{realHits}× {label}"));
+            Report(new Finding("pii", sev, $"{matches.Count}× {label}"));
 
             if (_options.RedactPii)
                 sanitized = pattern.Replace(sanitized, mask);
