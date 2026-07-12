@@ -63,8 +63,11 @@ dotnet run --project recipes/memory-augmented
 
 The demo walks a 7-turn trip-planning conversation. The traveler mentions their
 destination, diet, and budget in turns 1–3; at turn 4 ("Where should I eat
-dinner?") the agent **recalls the vegetarian + budget facts from memory** and
-tailors its answer, and it still has them at turn 7 — all without re-asking.
+dinner?") the agent **recalls the vegetarian + budget facts from memory** — the
+ones whose tags overlap the dining query — and tailors its answer, and it still
+has them at turn 7, all without re-asking. (The destination fact stays in memory
+but isn't recalled for a dining question: keyword recall surfaces only what's
+relevant to *this* turn, which is exactly the focus the pattern is meant to give.)
 
 ## When to use it
 

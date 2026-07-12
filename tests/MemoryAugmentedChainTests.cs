@@ -10,6 +10,26 @@ public class MemoryAugmentedChainTests
         => new("ok", new List<NewFact> { new(text, salience, tags) });
 
     [Fact]
+    public async Task Retrieve_DiningQuery_RecallsFoodRelevantFacts_NotTheDestination()
+    {
+        // Pins the recipe's documented turn-4 behavior: a dining query recalls the
+        // facts whose tags overlap it (diet, budget — both tagged "restaurant"/"eat")
+        // but NOT the destination fact, whose tags are trip/travel-only. Keyword
+        // recall surfaces only what's relevant to THIS turn — the README says so.
+        var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0, TopK = 3, MaxItems = 10 });
+        await agent.ChatAsync("t1", (i, r, t) => StoreFact("Destination is Tokyo.", 1.0, "destination", "tokyo", "trip", "travel"));
+        await agent.ChatAsync("t2", (i, r, t) => StoreFact("Traveler is vegetarian.", 0.9, "vegetarian", "diet", "food", "eat", "restaurant", "dinner"));
+        await agent.ChatAsync("t3", (i, r, t) => StoreFact("Budget-conscious trip.", 0.8, "budget", "cheap", "restaurant", "eat"));
+
+        var recalled = agent.Retrieve("Where should I eat dinner?");
+        var texts = recalled.Select(m => m.Text).ToList();
+
+        Assert.Contains("Traveler is vegetarian.", texts);
+        Assert.Contains("Budget-conscious trip.", texts);
+        Assert.DoesNotContain("Destination is Tokyo.", texts); // no tag overlaps "eat"/"dinner"
+    }
+
+    [Fact]
     public void Retrieve_EmptyMemory_ReturnsNothing()
     {
         var agent = new MemoryAugmentedAgent(new MemoryOptions());

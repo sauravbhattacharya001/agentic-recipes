@@ -122,7 +122,7 @@ var conversation = new[]
     "I'm planning a trip to Tokyo.",
     "By the way, I'm vegetarian.",
     "Trying to keep it on a tight budget.",
-    "Where should I eat dinner?",          // ← recalls vegetarian + budget (+ Tokyo)
+    "Where should I eat dinner?",          // ← recalls vegetarian + budget (the food-relevant facts)
     "What's the weather like there usually?",
     "Any museums worth seeing?",
     "Remind me — any good restaurant picks again?"  // memory still has the food prefs
