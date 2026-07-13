@@ -246,7 +246,8 @@ record DebateOptions
     public int MaxRounds { get; init; } = 4;
 
     /// <summary>
-    /// Judge lead — as a share of total awarded score — at or above which the
+    /// Judge lead — as a share of the top two debaters' head-to-head weight,
+    /// (leader − runner-up) / (leader + runner-up) — at or above which the
     /// orchestrator may end early with a <c>Decided</c> verdict, provided the
     /// same debater has led for <see cref="StableLeadRounds"/> rounds. Default 0.34.
     /// </summary>

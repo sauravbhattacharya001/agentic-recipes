@@ -363,6 +363,34 @@ public class MultiAgentDebateTests
         // Standings are ranked best-first across all three.
         Assert.Equal(new[] { "A", "B", "C" }, result.Standings.Select(s => s.Debater).ToArray());
     }
+
+    [Fact]
+    public async Task ThreeDebaters_LeaderWithHighShareOfTotal_ButThinLeadOverRunnerUp_DoesNotDecide()
+    {
+        // Pins the HEAD-TO-HEAD semantics of DecisiveMargin (matches the README):
+        // margin = (leader - runnerUp) / (leader + runnerUp), NOT the leader's
+        // share of the whole field's awarded score. Here A owns half of ALL score
+        // (0.50 / 1.00 = 0.50, which would clear 0.34 under a share-of-total reading),
+        // yet A only leads the runner-up B by (0.50-0.40)/(0.50+0.40) = 0.111 < 0.34,
+        // so the debate must NOT be decided - it hangs.
+        var a = Scripted("A", new DebateArgument("a", "x", 0.50));
+        var b = Scripted("B", new DebateArgument("b", "y", 0.40));
+        var c = Scripted("C", new DebateArgument("c", "z", 0.10));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 5,
+            DecisiveMargin = 0.34,
+            StableLeadRounds = 2,
+        });
+        var result = await orch.RunAsync("q", new[] { a, b, c }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Hung, result.Verdict);
+        Assert.Null(result.Winner);
+        Assert.Null(result.Answer);
+        // margin reported is the head-to-head lead over the runner-up, ~0.1111.
+        Assert.Equal(0.1111, result.Margin, 3);
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
