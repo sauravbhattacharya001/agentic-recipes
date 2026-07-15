@@ -537,13 +537,21 @@ class PlanExecutor
             // cascade-skip because this step's status is Failed.
         }
 
-        var criticalFailed = results.Any(r => r.Status == StepStatus.Failed);
+        // The goal is reached only when EVERY critical step actually produced a
+        // result (succeeded or recovered). A critical step can also end up
+        // Skipped — not just Failed — when a dependency of its did not complete
+        // (cascade-skip), e.g. a critical step that depends on a skipped
+        // non-critical step. Counting only Failed would mislabel that run
+        // "Completed / goal reached" even though a critical step never ran.
+        var criticalUnmet = results.Any(r =>
+            plan[r.StepId].Critical &&
+            r.Status is not (StepStatus.Succeeded or StepStatus.Recovered));
         var outcome = aborted
             ? PlanOutcome.Aborted
-            : criticalFailed
+            : criticalUnmet
                 ? PlanOutcome.CompletedWithFailures
                 : PlanOutcome.Completed;
-        var goalReached = !aborted && !criticalFailed;
+        var goalReached = !aborted && !criticalUnmet;
 
         return new PlanResult(
             outcome,

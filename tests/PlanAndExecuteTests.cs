@@ -276,6 +276,28 @@ public class PlanAndExecuteTests
     // ── Skip & cascade-skip ──────────────────────────────────
 
     [Fact]
+    public async Task ExecuteAsync_CriticalStepCascadeSkipped_GoalNotReached()
+    {
+        // A CRITICAL step whose (non-critical) dependency was skipped ends up
+        // Skipped, not Failed. The run must NOT report goal-reached: a critical
+        // step never ran, so the goal is unmet even though nothing is Failed.
+        var plan = new Plan("g", new[]
+        {
+            new PlanStep("optional", "", critical: false, run: (_, _) => throw new StepException("timeout")),
+            new PlanStep("must_ship", "", critical: true, dependsOn: new[] { "optional" },
+                run: (_, _) => "shipped"),
+        });
+
+        var result = await Executor(retryBudget: 0, stopOnCritical: true).ExecuteAsync(plan, EchoStep);
+
+        Assert.Contains("optional", result.Skipped);
+        Assert.Contains("must_ship", result.Skipped);   // critical, cascade-skipped
+        Assert.Empty(result.Failed);                     // nothing is Failed...
+        Assert.False(result.GoalReached);                // ...but the goal is still unmet
+        Assert.Equal(PlanOutcome.CompletedWithFailures, result.Outcome);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_NonCriticalFailure_SkipsAndCascades()
     {
         var downstreamRan = false;
@@ -676,13 +698,15 @@ class PlanExecutor
             }
         }
 
-        var criticalFailed = results.Any(r => r.Status == StepStatus.Failed);
+        var criticalUnmet = results.Any(r =>
+            plan[r.StepId].Critical &&
+            r.Status is not (StepStatus.Succeeded or StepStatus.Recovered));
         var outcome = aborted
             ? PlanOutcome.Aborted
-            : criticalFailed
+            : criticalUnmet
                 ? PlanOutcome.CompletedWithFailures
                 : PlanOutcome.Completed;
-        var goalReached = !aborted && !criticalFailed;
+        var goalReached = !aborted && !criticalUnmet;
 
         return new PlanResult(
             outcome,
