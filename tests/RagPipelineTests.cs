@@ -293,6 +293,19 @@ public class RagPipelineTests
     public void BestSentence_StopWordOnlyQuestion_ReturnsNull()
         => Assert.Null(RagPipeline.BestSentence("what is the of", "Shipping is free on large orders."));
 
+    [Fact]
+    public void BestSentence_ScoresByDistinctCoverageNotRepeatedTerms()
+    {
+        // Sentence A repeats a single query term ("warranty") three times; sentence B
+        // covers three DISTINCT query terms once each. The honest extractive pick is B
+        // (broader coverage of the question), not A (which just hammers one word).
+        // Scoring by total occurrences would wrongly pick A.
+        var text = "Warranty warranty warranty. The warranty covers water damage claims.";
+        var sentence = RagPipeline.BestSentence("does warranty cover water damage", text);
+        Assert.NotNull(sentence);
+        Assert.Contains("water damage", sentence!);
+    }
+
     // ── Options clamping ─────────────────────────────────────
 
     [Fact]
@@ -434,7 +447,7 @@ class RagPipeline
         {
             var sentence = raw.Trim();
             if (sentence.Length == 0) continue;
-            var overlap = Tokenize(sentence).Count(t => q.ContainsKey(t));
+            var overlap = Tokenize(sentence).Where(q.ContainsKey).Distinct().Count();
             if (overlap > bestScore)
             {
                 bestScore = overlap;

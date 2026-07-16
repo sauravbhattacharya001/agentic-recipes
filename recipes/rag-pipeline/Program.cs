@@ -303,7 +303,12 @@ class RagPipeline
         {
             var sentence = raw.Trim();
             if (sentence.Length == 0) continue;
-            var overlap = Tokenize(sentence).Count(t => q.ContainsKey(t));
+            // Score by how many DISTINCT question terms the sentence covers, not by
+            // total query-term occurrences. Counting occurrences let a sentence that
+            // merely repeats one common query word outrank a sentence that actually
+            // answers more of the question (broader coverage is the honest signal for
+            // an extractive answer).
+            var overlap = Tokenize(sentence).Where(q.ContainsKey).Distinct().Count();
             if (overlap > bestScore)
             {
                 bestScore = overlap;
