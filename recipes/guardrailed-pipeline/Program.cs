@@ -273,6 +273,15 @@ class GuardrailPipeline
             return new GuardVerdict(GuardAction.Sanitize,
                 "redacted sensitive data", sanitized, findings);
 
+        // Redaction is off, so there is no sanitize path. A High-severity secret
+        // (API key / card number) must NOT be forwarded verbatim just because
+        // redaction is disabled — that is exactly the leak this guardrail exists
+        // to stop. With nothing safe to forward, block it. Low/medium PII (e.g. a
+        // bare email) is a softer signal and may still pass through.
+        if (pii && worst >= Severity.High)
+            return new GuardVerdict(GuardAction.Block,
+                "high-severity secret with redaction disabled", string.Empty, findings);
+
         if (findings.Count == 0)
             return new GuardVerdict(GuardAction.Allow, "no findings", sanitized, findings);
 

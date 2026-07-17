@@ -184,6 +184,44 @@ public class GuardrailedPipelineTests
     }
 
     [Fact]
+    public void HighSeveritySecret_IsBlocked_WhenRedactionDisabled()
+    {
+        // A leaked API key (High severity) has no safe forward when redaction is
+        // off: it must be blocked, not passed verbatim to the model. Forwarding it
+        // would defeat the whole point of the guardrail.
+        var guard = Create(redactPii: false);
+        var v = guard.Evaluate("here is my key sk-ABCD1234EFGH5678IJKL keep it");
+
+        Assert.Equal(GuardAction.Block, v.Action);
+        Assert.Empty(v.SafeText);
+        Assert.DoesNotContain("sk-ABCD1234EFGH5678IJKL", v.SafeText);
+        Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Severity == Severity.High);
+    }
+
+    [Fact]
+    public void HighSeverityCard_IsBlocked_WhenRedactionDisabled()
+    {
+        var guard = Create(redactPii: false);
+        var v = guard.Evaluate("card 4111 1111 1111 1111 on file");
+
+        Assert.Equal(GuardAction.Block, v.Action);
+        Assert.Empty(v.SafeText);
+        Assert.DoesNotContain("4111", v.SafeText);
+    }
+
+    [Fact]
+    public void HighSeveritySecret_IsRedacted_NotBlocked_WhenRedactionEnabled()
+    {
+        // With redaction ON there IS a safe forward, so the same key is sanitized
+        // (not blocked) — proving the block only kicks in when redaction is off.
+        var guard = Create(redactPii: true);
+        var v = guard.Evaluate("here is my key sk-ABCD1234EFGH5678IJKL keep it");
+
+        Assert.Equal(GuardAction.Sanitize, v.Action);
+        Assert.Contains("[REDACTED_API_KEY]", v.SafeText);
+    }
+
+    [Fact]
     public void MixedInjectionAndPii_BlocksOnInjectionFirst()
     {
         var guard = Create(blockOnInjection: true);
@@ -400,6 +438,10 @@ class GuardrailPipeline
         if (pii && _options.RedactPii)
             return new GuardVerdict(GuardAction.Sanitize,
                 "redacted sensitive data", sanitized, findings);
+
+        if (pii && worst >= Severity.High)
+            return new GuardVerdict(GuardAction.Block,
+                "high-severity secret with redaction disabled", string.Empty, findings);
 
         if (findings.Count == 0)
             return new GuardVerdict(GuardAction.Allow, "no findings", sanitized, findings);

@@ -85,6 +85,11 @@ enum GuardAction { Allow, Sanitize, Block }
   sentences carrying an injection, then forward the cleaned text.
 - **Allow** when nothing trips.
 
+> When `RedactPii = false` there is no safe forward for secrets, so a **High-severity**
+> secret (API key / card number) is **blocked** rather than passed to the model verbatim
+> — turning redaction off must never turn the guardrail into a leak. Softer Low/Medium
+> PII (e.g. a bare email) may still be allowed through in that mode.
+
 ### Sanitize keeps the conversation alive
 
 Blocking is blunt. For PII the pipeline **redacts** (`john@x.com` → `[REDACTED_EMAIL]`)
