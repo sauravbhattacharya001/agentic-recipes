@@ -8,7 +8,7 @@
 
 The Reflexion pattern is the **learn-from-failure loop**. Instead of just retrying a failed task and hoping for a different result, the agent writes a short **verbal self-reflection** about *why* it failed, stores that lesson in a persistent **episodic memory**, and is shown the accumulated lessons on every subsequent attempt. It improves across trials — with no weight updates, no fine-tuning, just language it generated and remembered.
 
-1. **Attempt** the task from the task description plus all lessons learned so far
+1. **Attempt** the task from the task description plus the lessons currently in episodic memory
 2. **Evaluate** the attempt → a scalar reward (0–1) and a list of concrete failures
 3. **Reflect** on a failure → a one-line verbal lesson ("verify the input is sorted first") appended to episodic memory
 4. **Retry** with the growing memory injected into context
@@ -63,7 +63,7 @@ record Evaluation(double Reward, bool Succeeded, string Feedback, IReadOnlyList<
 
 ### Verbal self-reflection stored in episodic memory
 
-On failure, the reflector turns the most important open issue into a short, memorable lesson. Duplicate lessons are not re-stored, so the memory stays honest and the agent can tell when it is stuck. Every future attempt sees the full lesson list:
+On failure, the reflector turns the most important open issue into a short, memorable lesson. A lesson learned at any point is never re-stored — novelty is judged against the *full* history of lessons, not the bounded window — so memory stays honest and the agent can tell when it is stuck. Every future attempt sees the current episodic memory (the most recent `MaxReflections` lessons; oldest are dropped first once the cap is reached):
 
 ```csharp
 string? Reflect(string task, string action, Evaluation eval, IReadOnlyList<string> priorLessons) =>
