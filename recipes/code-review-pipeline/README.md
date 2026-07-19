@@ -31,9 +31,9 @@ Each stage runs through the full middleware pipeline (validation, retry, caching
 ## Usage
 
 ```bash
-dotnet run --project . -- path/to/file.cs
+dotnet run --project recipes/code-review-pipeline -- path/to/file.cs
 # or pipe code via stdin
-echo "public void Bad() { Thread.Sleep(10000); }" | dotnet run --project .
+echo "public void Bad() { Thread.Sleep(10000); }" | dotnet run --project recipes/code-review-pipeline
 ```
 
 ## How It Leverages prompt-lib

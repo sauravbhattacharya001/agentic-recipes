@@ -27,7 +27,7 @@ A linear `PromptChain` that demonstrates the most common agentic pattern: sequen
 ## Usage
 
 ```bash
-dotnet run --project . -- "quantum computing advances in 2025"
+dotnet run --project recipes/research-summarize-format -- "quantum computing advances in 2025"
 ```
 
 ## How It Leverages prompt-lib

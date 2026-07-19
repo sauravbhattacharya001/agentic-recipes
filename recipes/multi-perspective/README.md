@@ -31,7 +31,7 @@ A fan-out/fan-in pattern using `PromptOrchestrator` that runs the same input thr
 ## Usage
 
 ```bash
-dotnet run --project . -- "Should we migrate our monolith to microservices?"
+dotnet run --project recipes/multi-perspective -- "Should we migrate our monolith to microservices?"
 ```
 
 ## How It Leverages prompt-lib

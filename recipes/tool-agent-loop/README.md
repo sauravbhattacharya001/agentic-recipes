@@ -47,7 +47,7 @@ User Query
 ## Run
 
 ```bash
-dotnet run
+dotnet run --project recipes/tool-agent-loop
 ```
 
 ## Swap in Real LLM
