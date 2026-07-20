@@ -52,6 +52,19 @@ public class TreeOfThoughtsTests
     // ── Tests ────────────────────────────────────────────────
 
     [Fact]
+    public void StateValue_MultiStepState_ReadsValueAfterLastEquals()
+    {
+        // Regression: a state accumulates as "0 +9 = 9 +5 = 14", so the running
+        // value is what follows the LAST '='. Reading from the FIRST '=' would leave
+        // " 9 +5 = 14" (unparseable) and mis-read the state. Multi-step states must
+        // resolve to their final value.
+        Assert.Equal(14, StateValue("0 +9 = 9 +5 = 14"));
+        Assert.Equal(23, StateValue("0 +9 = 9 +9 = 18 +5 = 23"));
+        Assert.Equal(9, StateValue("0 +9 = 9"));
+        Assert.Equal(0, StateValue(""));
+    }
+
+    [Fact]
     public async Task SearchAsync_FindsSolution_ReturnsSolvedWithPath()
     {
         var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions

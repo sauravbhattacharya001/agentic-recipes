@@ -68,7 +68,11 @@ var moves = new (string Label, Func<int, int> Apply)[]
 int StateValue(string s)
 {
     if (string.IsNullOrWhiteSpace(s)) return 0;
-    var afterEquals = s.Contains('=') ? s[(s.IndexOf('=') + 1)..] : s;
+    // States accumulate as "0 +9 = 9 +5 = 14": the running value follows the
+    // LAST '='. Using the FIRST '=' would leave trailing moves in the substring
+    // (" 9 +5 = 14"), fail the parse, and silently fall back to the slow replay
+    // below for every multi-step state — so read from the last '='.
+    var afterEquals = s.Contains('=') ? s[(s.LastIndexOf('=') + 1)..] : s;
     if (int.TryParse(afterEquals.Trim(), out var v)) return v;
     // Fall back: replay the move labels from "0" if there's no "= value".
     var value = 0;
