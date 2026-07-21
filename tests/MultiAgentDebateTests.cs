@@ -53,6 +53,35 @@ public class MultiAgentDebateTests
         Assert.True(result.Transcript[0].Converged);
     }
 
+    // Regression: a converged verdict must report a deterministic display answer,
+    // independent of debater registration order. Two debaters can agree on the same
+    // NORMALIZED stance while spelling it differently ("Yes." vs "yes"); the reported
+    // answer used to be answerByDebater.Values.First(), whose value depended on dictionary
+    // insertion order. It now reports the highest-judge-weight display form, tie-broken
+    // by ordinal, so the same debate yields the same answer whichever order sides register.
+    [Fact]
+    public async Task Converged_ReportsSameAnswer_RegardlessOfDebaterOrder()
+    {
+        // Same normalized stance ("yes"), different display spelling. Equal weight so
+        // neither side opens a decisive lead — the debate settles by convergence, and the
+        // reported display form is chosen by ordinal tie-break, not registration order.
+        var strong = Scripted("Strong", new DebateArgument("clearly", "Yes", 0.7));
+        var weak = Scripted("Weak", new DebateArgument("i suppose", "yes", 0.7));
+
+        var opts = new DebateOptions { MaxRounds = 3 };
+        var forward = await new DebateOrchestrator(opts)
+            .RunAsync("q", new[] { strong, weak }, ConfidenceJudge);
+        var reversed = await new DebateOrchestrator(opts)
+            .RunAsync("q", new[] { weak, strong }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Converged, forward.Verdict);
+        Assert.Equal(DebateVerdict.Converged, reversed.Verdict);
+        // Deterministic across registration order...
+        Assert.Equal(forward.Answer, reversed.Answer);
+        // ...and it is a stable display form (ordinal tie-break), not just whoever was first.
+        Assert.Equal("Yes", forward.Answer);
+    }
+
     [Fact]
     public async Task Decides_WhenJudgeGivesStableClearLead()
     {
@@ -559,7 +588,7 @@ class DebateOrchestrator
         switch (verdict)
         {
             case DebateVerdict.Converged:
-                answer = answerByDebater.Values.First();
+                answer = LeadingDisplayAnswer(scoreByDebater, answerByDebater);
                 winner = null;
                 break;
             case DebateVerdict.Decided:
@@ -582,6 +611,14 @@ class DebateOrchestrator
             Standings: standings,
             Transcript: transcript);
     }
+
+    private static string LeadingDisplayAnswer(
+        IReadOnlyDictionary<string, double> scoreByDebater,
+        IReadOnlyDictionary<string, string> answerByDebater)
+        => answerByDebater
+            .OrderByDescending(kv => scoreByDebater.TryGetValue(kv.Key, out var s) ? s : 0.0)
+            .ThenBy(kv => kv.Value, StringComparer.Ordinal)
+            .First().Value;
 
     private static string DefaultNormalize(string answer) => (answer ?? "").Trim().ToLowerInvariant();
 

@@ -404,8 +404,13 @@ class DebateOrchestrator
         switch (verdict)
         {
             case DebateVerdict.Converged:
-                // Everyone agrees: any debater's answer is the settled answer.
-                answer = answerByDebater.Values.First();
+                // Everyone agrees on one normalized stance. Report the highest-weighted
+                // display form of it rather than answerByDebater.Values.First(): dictionary
+                // enumeration order is not guaranteed, and two debaters can converge on the
+                // same normalized answer while spelling it differently ("yes" vs "Yes.").
+                // Picking .First() would make the reported answer depend on registration
+                // order; the top-weighted display is deterministic (weight desc, then key).
+                answer = LeadingDisplayAnswer(scoreByDebater, answerByDebater);
                 winner = null; // a converged debate has no "winner" — it's a consensus
                 break;
             case DebateVerdict.Decided:
@@ -428,6 +433,17 @@ class DebateOrchestrator
             Standings: standings,
             Transcript: transcript);
     }
+
+    /// <summary>The display form of the agreed answer with the most cumulative judge weight,
+    /// tie-broken deterministically by display string. Used for a converged verdict so the
+    /// reported answer never depends on debater registration order.</summary>
+    private static string LeadingDisplayAnswer(
+        IReadOnlyDictionary<string, double> scoreByDebater,
+        IReadOnlyDictionary<string, string> answerByDebater)
+        => answerByDebater
+            .OrderByDescending(kv => scoreByDebater.TryGetValue(kv.Key, out var s) ? s : 0.0)
+            .ThenBy(kv => kv.Value, StringComparer.Ordinal)
+            .First().Value;
 
     private static string DefaultNormalize(string answer) => (answer ?? "").Trim().ToLowerInvariant();
 
