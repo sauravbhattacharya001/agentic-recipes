@@ -256,6 +256,49 @@ public class MultiPerspectiveTests
             e => e.Type == OrchestratorEventType.NodeCompleted);
     }
 
+    [Fact]
+    public async Task Execute_FanIn_AggregatorPromptEmbedsEachParallelOutput()
+    {
+        // The heart of the fan-in half of the pattern: each parallel node's OUTPUT
+        // must be substituted into the aggregator prompt's {parallel_N} slots. A
+        // recipe that ran every node but wired the wrong (or empty) outputs into the
+        // synthesizer would still pass every other test here — so prove the actual
+        // data flow by capturing the exact prompt the aggregator was invoked with.
+        string? aggPrompt = null;
+
+        var orchestrator = new PromptOrchestrator(async prompt =>
+        {
+            await Task.Delay(1);
+            // Give each perspective a distinct, identifiable output keyed off its prompt.
+            if (prompt.StartsWith("As an optimist")) return "OPTIMIST_VERDICT";
+            if (prompt.StartsWith("As a skeptic")) return "SKEPTIC_VERDICT";
+            if (prompt.StartsWith("As a pragmatist")) return "PRAGMATIST_VERDICT";
+            if (prompt.StartsWith("Synthesize"))
+            {
+                Volatile.Write(ref aggPrompt, prompt); // capture the fully-rendered aggregator prompt
+                return "SYNTHESIS";
+            }
+            return "INPUT_FRAME";
+        });
+
+        var plan = BuildPlan();
+        var execution = await orchestrator.ExecuteAsync(plan,
+            new Dictionary<string, string> { ["topic"] = "fan-in wiring" });
+
+        Assert.Equal(OrchestratorStatus.Completed, execution.Status);
+        var captured = Volatile.Read(ref aggPrompt);
+        Assert.NotNull(captured);
+
+        // Every parallel node's actual output flowed into the aggregator's slots,
+        // and the literal {parallel_N} placeholders were all resolved.
+        Assert.Contains("OPTIMIST_VERDICT", captured);
+        Assert.Contains("SKEPTIC_VERDICT", captured);
+        Assert.Contains("PRAGMATIST_VERDICT", captured);
+        Assert.DoesNotContain("{parallel_0}", captured);
+        Assert.DoesNotContain("{parallel_1}", captured);
+        Assert.DoesNotContain("{parallel_2}", captured);
+    }
+
     // ── Report Generation ────────────────────────────────────
 
     [Fact]
