@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace AgenticRecipes.Tests;
@@ -87,6 +88,53 @@ public class SuiteContractTests
         Assert.True(
             offenders.Count == 0,
             "Recipes must run offline with no credentials (README: \"No API keys or cloud endpoints are required.\"), but found:\n  " +
+            string.Join("\n  ", offenders));
+    }
+
+    /// <summary>
+    /// No recipe may block on interactive console input. Every recipe is a
+    /// self-contained demo the README promises "passes out of the box" and runs
+    /// unattended in CI, so a blocking read (<c>Console.ReadLine</c>,
+    /// <c>Console.Read</c>, <c>Console.ReadKey</c>) would hang the run forever
+    /// waiting for a keystroke that never comes. The one allowed stdin path —
+    /// <c>Console.In.ReadToEndAsync()</c> guarded by <c>Console.IsInputRedirected</c>
+    /// in the code-review recipe — drains to EOF and does not block, so it is not
+    /// matched here. This pins the "runs unattended" half of the offline contract
+    /// that <see cref="RecipeProgramsAreOffline"/> (credentials) leaves open.
+    /// </summary>
+    [Fact]
+    public void RecipeProgramsDoNotBlockOnInteractiveInput()
+    {
+        var recipesDir = FindRecipesDir();
+        var programs = Directory.GetFiles(recipesDir, "Program.cs", SearchOption.AllDirectories);
+
+        Assert.NotEmpty(programs); // sanity: we actually found the recipe sources
+
+        // Blocking reads that wait for an interactive keystroke/line. Matched as
+        // whole-identifier method calls so a variable or comment that merely
+        // contains the substring does not trip a false positive.
+        var blocking = new[]
+        {
+            new Regex(@"\bConsole\.ReadLine\s*\("),
+            new Regex(@"\bConsole\.ReadKey\s*\("),
+            // Console.Read() blocks; Console.In.ReadToEndAsync()/ReadAsync() do not,
+            // so anchor on "Console.Read(" specifically (not "Console.In.Read...").
+            new Regex(@"\bConsole\.Read\s*\("),
+        };
+
+        var offenders = new List<string>();
+        foreach (var file in programs)
+        {
+            var text = File.ReadAllText(file);
+            foreach (var pattern in blocking)
+                if (pattern.IsMatch(text))
+                    offenders.Add($"{Path.GetFileName(Path.GetDirectoryName(file))}/Program.cs matches /{pattern}/");
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "Recipes must run unattended and must not block on interactive console input " +
+            "(README: the suite \"passes out of the box\"), but found:\n  " +
             string.Join("\n  ", offenders));
     }
 
