@@ -235,6 +235,36 @@ public class RagPipelineTests
     }
 
     [Fact]
+    public async Task Ask_DropsRetrievedChunksBelowFloor_AndRenumbersContiguously()
+    {
+        // With this corpus + query, Retrieve() returns four chunks whose scores
+        // straddle 0.25 (roughly 0.68, 0.32, 0.21, 0.16). A MinRelevance floor of
+        // 0.25 must: keep the top chunk (so the turn is answerable, not abstained),
+        // drop the two sub-floor chunks from the generated context, and renumber the
+        // survivors' citations from 1 with no gaps. This exercises the
+        // context = retrieved.Where(score >= floor) branch, distinct from the TopK cap.
+        RetrievedChunk[] seen = System.Array.Empty<RetrievedChunk>();
+        var rag = Build(new RagOptions { ChunkSize = 6, ChunkOverlap = 1, TopK = 5, MinRelevance = 0.25 });
+
+        var retrieved = rag.Retrieve("water damage warranty refund");
+        Assert.True(retrieved.Count > 2, "precondition: query should retrieve more than two chunks");
+        Assert.Contains(retrieved, r => r.Score < 0.25); // at least one sub-floor chunk to drop
+
+        var ans = await rag.AskAsync("water damage warranty refund", (q, ctx) =>
+        {
+            seen = ctx.ToArray();
+            return "grounded";
+        });
+
+        Assert.False(ans.Abstained);
+        Assert.All(seen, r => Assert.True(r.Score >= 0.25));
+        Assert.Equal(ans.Context.Count, seen.Length);
+        Assert.True(seen.Length < retrieved.Count, "sub-floor chunks should have been dropped");
+        for (var i = 0; i < seen.Length; i++)
+            Assert.Equal(i + 1, seen[i].Citation);
+    }
+
+    [Fact]
     public async Task Ask_PassesContextToGenerator()
     {
         var ans = await Build().AskAsync("water damage warranty", (q, ctx) => $"used {ctx.Count}");
