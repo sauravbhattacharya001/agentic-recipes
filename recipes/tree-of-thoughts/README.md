@@ -165,7 +165,12 @@ var result = await agent.SearchAsync(
             Work so far:
             {{w}}
             Propose {{k}} distinct next steps. One per line.
-            """).Set("p", problem).Set("w", thought).Set("k", "3").Render();
+            """).Render(new Dictionary<string, string>
+            {
+                ["p"] = problem,
+                ["w"] = thought,
+                ["k"] = "3",
+            });
 
         var lines = await model.CompleteLinesAsync(prompt, temperature: 0.7, ct);
         return lines.Select(step => new ThoughtExpansion(step, thought + "\n" + step)).ToList();

@@ -149,11 +149,14 @@ var result = await executor.ExecuteAsync(plan, async (step, ctx, ct) =>
         {{inputs}}
         Do the task and return only its result.
         """)
-        .Set("goal", ctx.Goal)
-        .Set("task", step.Description)
-        .Set("inputs", string.Join("\n", step.DependsOn.Select(d => $"- {d}: {ctx.Outputs[d]}")));
+        .Render(new Dictionary<string, string>
+        {
+            ["goal"] = ctx.Goal,
+            ["task"] = step.Description,
+            ["inputs"] = string.Join("\n", step.DependsOn.Select(d => $"- {d}: {ctx.Outputs[d]}")),
+        });
 
-    return await model.CompleteAsync(prompt.Render(), ct);
+    return await model.CompleteAsync(prompt, ct);
 });
 ```
 

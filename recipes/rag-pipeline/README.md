@@ -107,10 +107,13 @@ var answer = await rag.AskAsync(question, async (q, context, ct) =>
 
         Question: {{question}}
         """)
-        .Set("context", RagPipeline.BuildContextBlock(context))
-        .Set("question", q);
+        .Render(new Dictionary<string, string>
+        {
+            ["context"] = RagPipeline.BuildContextBlock(context),
+            ["question"] = q,
+        });
 
-    return await model.CompleteAsync(prompt.Render(), ct);
+    return await model.CompleteAsync(prompt, ct);
 });
 ```
 
