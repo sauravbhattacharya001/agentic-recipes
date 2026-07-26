@@ -273,11 +273,23 @@ class PromptRouter
                 ? reasonEl.GetString()!
                 : "";
 
-            // Validate route exists
+            // Validate route exists. When the classifier names a route outside the
+            // configured vocabulary we discard its answer entirely — so its self-
+            // reported confidence and reasoning describe a route we are NOT taking and
+            // must not be attributed to the fallback (that would pair "general" with a
+            // spurious 0.9). Zero the confidence and record why, mirroring the other
+            // fallback paths (parse-failure / low-confidence) so callers and the
+            // OnRouteSelected hook get an honest signal.
             if (!_options.Routes.Contains(route))
+            {
                 route = _options.FallbackRoute;
+                confidence = 0.0;
+                reasoning = "Classifier chose an unknown route; using fallback";
+            }
 
-            // Check confidence threshold
+            // Check confidence threshold. Here the measured confidence IS meaningful
+            // (it is a real, in-vocabulary route that simply wasn't trusted enough), so
+            // preserve it — the low value is exactly the signal that triggered fallback.
             if (confidence < _options.MinConfidence)
                 route = _options.FallbackRoute;
 

@@ -78,6 +78,26 @@ public class ConditionalRouterTests
             async (prompt, ct) => await MakeClassifier("nonexistent_route", 0.9, "bad route"));
 
         Assert.Equal("general", result.Route);
+        // The classifier's 0.9 belonged to the rejected route — it must NOT be
+        // reattributed to the fallback (regression: fallback used to report 0.9).
+        Assert.Equal(0.0, result.Confidence);
+        Assert.DoesNotContain("bad route", result.Reasoning);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_UnknownRoute_OnRouteSelectedGetsZeroConfidence()
+    {
+        string? seenRoute = null;
+        double seenConfidence = -1;
+        var router = CreateRouter(onRoute: (r, c, _) => { seenRoute = r; seenConfidence = c; });
+
+        await router.ClassifyAsync("weird input",
+            async (prompt, ct) => await MakeClassifier("nonexistent_route", 0.9, "bad route"));
+
+        // The observability hook must see the honest fallback signal, not the
+        // discarded route's confidence.
+        Assert.Equal("general", seenRoute);
+        Assert.Equal(0.0, seenConfidence);
     }
 
     [Fact]
@@ -386,8 +406,15 @@ class PromptRouter
                 ? reasonEl.GetString()!
                 : "";
 
+            // Unknown route: discard the classifier's answer and its (irrelevant)
+            // confidence/reasoning — don't attribute them to the fallback.
             if (!_options.Routes.Contains(route))
+            {
                 route = _options.FallbackRoute;
+                confidence = 0.0;
+                reasoning = "Classifier chose an unknown route; using fallback";
+            }
+            // Low confidence on an in-vocabulary route: keep the (real) confidence.
             if (confidence < _options.MinConfidence)
                 route = _options.FallbackRoute;
 
