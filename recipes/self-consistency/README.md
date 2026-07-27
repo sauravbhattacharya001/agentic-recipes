@@ -149,7 +149,7 @@ var voter = new EnsembleVoter(new EnsembleOptions
 var prompt = new PromptTemplate("""
     Solve step by step, then end with a line:  ANSWER: <value>
     Question: {{q}}
-    """).Render(new Dictionary<string, string> { ["q"] = question });
+    """, new Dictionary<string, string>()).Render(new Dictionary<string, string> { ["q"] = question });
 
 var result = await voter.RunAsync(samples: 5, async (i, ct) =>
 {

@@ -148,7 +148,7 @@ var result = await executor.ExecuteAsync(plan, async (step, ctx, ct) =>
         Inputs so far:
         {{inputs}}
         Do the task and return only its result.
-        """)
+        """, new Dictionary<string, string>())
         .Render(new Dictionary<string, string>
         {
             ["goal"] = ctx.Goal,
