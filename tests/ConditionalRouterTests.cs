@@ -357,6 +357,52 @@ public class ConditionalRouterTests
                     return await MakeClassifier("general", 0.8, "ok");
                 }, cts.Token));
     }
+
+    // ── Routing-summary honesty ────────────────────────────────
+    // The demo prints a "Routing Summary" (messages processed, distinct routes
+    // used, escalation count, average confidence). Those numbers were previously
+    // hardcoded strings that silently lie the moment the sample messages or the
+    // classifier change. They are now computed from the real ClassifyResults; this
+    // test pins that aggregation so a regression to hardcoded values is caught.
+    [Fact]
+    public async Task RoutingSummary_IsComputedFromActualClassifications()
+    {
+        var router = CreateRouter();
+
+        // Mirror the recipe's simulated classifier for its four sample messages.
+        Task<string> Classify(string prompt, CancellationToken ct)
+        {
+            if (prompt.Contains("error") || prompt.Contains("crash") || prompt.Contains("stack trace"))
+                return MakeClassifier("technical", 0.92, "error/crash keywords");
+            if (prompt.Contains("charge") || prompt.Contains("refund") || prompt.Contains("invoice") || prompt.Contains("bill"))
+                return MakeClassifier("billing", 0.88, "billing keywords");
+            if (prompt.Contains("lawyer") || prompt.Contains("legal") || prompt.Contains("sue"))
+                return MakeClassifier("escalation", 0.95, "legal threat");
+            return MakeClassifier("general", 0.75, "no strong signal");
+        }
+
+        var messages = new[]
+        {
+            "I'm getting a NullReferenceException crash with this stack trace.",
+            "I was charged $49.99 but I cancelled; I want a refund.",
+            "I'm contacting my lawyer and want my data deleted under GDPR.",
+            "Does your product support integration with Slack?",
+        };
+
+        var classifications = new List<ClassifyResult>();
+        foreach (var m in messages)
+            classifications.Add(await router.ClassifyAsync(m, Classify));
+
+        var routesUsed = classifications.Select(c => c.Route).Distinct()
+            .OrderBy(r => r, StringComparer.Ordinal).ToList();
+        var escalations = classifications.Count(c => c.Route == "escalation");
+        var avgConfidence = classifications.Average(c => c.Confidence);
+
+        Assert.Equal(4, classifications.Count);
+        Assert.Equal(new[] { "billing", "escalation", "general", "technical" }, routesUsed);
+        Assert.Equal(1, escalations);
+        Assert.Equal(0.875, avgConfidence, 3); // (0.92+0.88+0.95+0.75)/4 → 87.5%
+    }
 }
 
 // Supporting types needed for compilation

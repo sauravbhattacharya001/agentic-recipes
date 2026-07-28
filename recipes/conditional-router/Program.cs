@@ -175,6 +175,8 @@ var testMessages = new[]
     "Hey, does your product support integration with Slack? I'd like to get notifications there."
 };
 
+var classifications = new List<ClassifyResult>();
+
 foreach (var message in testMessages)
 {
     Console.WriteLine("───────────────────────────────────────────────────────");
@@ -183,6 +185,7 @@ foreach (var message in testMessages)
 
     // Phase 1: Classify
     var classifyResult = await router.ClassifyAsync(message, ClassifierModel);
+    classifications.Add(classifyResult);
 
     // Phase 2: Route to handler
     var handler = routes[classifyResult.Route];
@@ -202,10 +205,21 @@ foreach (var message in testMessages)
 Console.WriteLine("═══════════════════════════════════════════════════════");
 Console.WriteLine("  Routing Summary");
 Console.WriteLine("═══════════════════════════════════════════════════════");
-Console.WriteLine($"  Messages processed: {testMessages.Length}");
-Console.WriteLine($"  Routes used: technical, billing, escalation, general");
-Console.WriteLine($"  Escalations: 1 (legal threat)");
-Console.WriteLine($"  Avg confidence: 87.5%");
+// Compute the summary from the actual classifications rather than hardcoding it,
+// so it stays honest if the sample messages (or the classifier) change.
+var routesUsed = classifications
+    .Select(c => c.Route)
+    .Distinct()
+    .OrderBy(r => r, StringComparer.Ordinal)
+    .ToList();
+var escalations = classifications.Count(c => c.Route == "escalation");
+var avgConfidence = classifications.Count > 0
+    ? classifications.Average(c => c.Confidence)
+    : 0.0;
+Console.WriteLine($"  Messages processed: {classifications.Count}");
+Console.WriteLine($"  Routes used: {string.Join(", ", routesUsed)}");
+Console.WriteLine($"  Escalations: {escalations}");
+Console.WriteLine($"  Avg confidence: {avgConfidence:P1}");
 Console.WriteLine();
 Console.WriteLine("Pattern: classify → branch → handle");
 Console.WriteLine("Each branch has specialized prompts, context, and response format.");
