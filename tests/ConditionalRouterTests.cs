@@ -68,6 +68,29 @@ public class ConditionalRouterTests
             async (prompt, ct) => await MakeClassifier("technical", 0.5, "uncertain"));
 
         Assert.Equal("general", result.Route); // Fell back due to low confidence
+        // The real (low) confidence IS the fallback signal and must be preserved.
+        Assert.Equal(0.5, result.Confidence);
+        // But the reasoning argued for the REJECTED 'technical' route; pairing it with
+        // the 'general' fallback would be misleading, so it must be replaced with an
+        // honest fallback explanation (regression: fallback used to report "uncertain").
+        Assert.DoesNotContain("uncertain", result.Reasoning);
+        Assert.Contains("below threshold", result.Reasoning);
+        Assert.Contains("technical", result.Reasoning); // names the route it declined
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_LowConfidenceOnFallbackRoute_KeepsItsOwnReasoning()
+    {
+        // The classifier legitimately picked the fallback route ('general') itself, just
+        // below threshold. No OTHER route is being rejected, so its genuine reasoning
+        // must be preserved rather than overwritten with a spurious fallback note.
+        var router = CreateRouter(minConfidence: 0.7);
+        var result = await router.ClassifyAsync("hello",
+            async (prompt, ct) => await MakeClassifier("general", 0.4, "just a greeting"));
+
+        Assert.Equal("general", result.Route);
+        Assert.Equal(0.4, result.Confidence);
+        Assert.Equal("just a greeting", result.Reasoning);
     }
 
     [Fact]
@@ -460,9 +483,13 @@ class PromptRouter
                 confidence = 0.0;
                 reasoning = "Classifier chose an unknown route; using fallback";
             }
-            // Low confidence on an in-vocabulary route: keep the (real) confidence.
-            if (confidence < _options.MinConfidence)
+            // Low confidence on an in-vocabulary route: keep the (real) confidence,
+            // but replace the rejected route's reasoning with an honest fallback note.
+            if (confidence < _options.MinConfidence && route != _options.FallbackRoute)
+            {
+                reasoning = $"Confidence {confidence:0.##} below threshold {_options.MinConfidence:0.##} for route '{route}'; using fallback";
                 route = _options.FallbackRoute;
+            }
 
             _options.OnRouteSelected?.Invoke(route, confidence, reasoning);
             return new ClassifyResult(route, confidence, reasoning);

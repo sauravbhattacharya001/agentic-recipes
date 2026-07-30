@@ -304,8 +304,14 @@ class PromptRouter
             // Check confidence threshold. Here the measured confidence IS meaningful
             // (it is a real, in-vocabulary route that simply wasn't trusted enough), so
             // preserve it — the low value is exactly the signal that triggered fallback.
-            if (confidence < _options.MinConfidence)
+            // But the reasoning argued for the REJECTED route, so pairing it with the
+            // fallback would be misleading (the same reattribution bug the unknown-route
+            // path avoids); replace it with an honest explanation of the fallback.
+            if (confidence < _options.MinConfidence && route != _options.FallbackRoute)
+            {
+                reasoning = $"Confidence {confidence:0.##} below threshold {_options.MinConfidence:0.##} for route '{route}'; using fallback";
                 route = _options.FallbackRoute;
+            }
 
             _options.OnRouteSelected?.Invoke(route, confidence, reasoning);
             return new ClassifyResult(route, confidence, reasoning);
