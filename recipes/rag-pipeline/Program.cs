@@ -79,23 +79,11 @@ Console.WriteLine($"Indexed {corpus.Length} documents into {rag.ChunkCount} chun
 //    star of the show offline.
 string Generate(string question, IReadOnlyList<RetrievedChunk> context)
 {
-    // The pipeline already decided this is answerable (context non-empty).
-    // Stitch the most relevant sentences together with citations, skipping
-    // fragments already covered by a higher-ranked chunk (overlap artifacts).
-    var sentences = new List<string>();
-    foreach (var c in context)
-    {
-        var best = RagPipeline.BestSentence(question, c.Chunk.Text);
-        if (best is null) continue;
-        var alreadyCovered = sentences.Any(s =>
-            s.Contains(best, StringComparison.OrdinalIgnoreCase) ||
-            best.Contains(s, StringComparison.OrdinalIgnoreCase));
-        if (alreadyCovered) continue;
-        sentences.Add($"{best} [{c.Citation}]");
-    }
-    return sentences.Count > 0
-        ? string.Join(" ", sentences)
-        : "I don't have enough information to answer that.";
+    // The pipeline already decided this is answerable (context non-empty). Stitch the
+    // most relevant sentences together with citations, skipping fragments already
+    // covered by a higher-ranked chunk (overlap artifacts).
+    return RagPipeline.StitchAnswer(question, context)
+        ?? "I don't have enough information to answer that.";
 }
 
 // 4. Ask the corpus a series of questions — including one it should
@@ -289,6 +277,36 @@ class RagPipeline
         foreach (var c in context)
             sb.AppendLine($"[{c.Citation}] ({c.Chunk.DocumentId}) {c.Chunk.Text}");
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Compose an extractive answer from retrieved chunks: pick each chunk's most
+    /// question-relevant sentence, drop ones already subsumed by a higher-ranked pick
+    /// (overlap artifacts from adjacent, overlapping chunks), and tag each with its
+    /// citation number. Returns null when no chunk yields a usable sentence.
+    /// </summary>
+    public static string? StitchAnswer(string question, IReadOnlyList<RetrievedChunk> context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var sentences = new List<string>();
+        var pickedRaw = new List<string>();   // un-decorated sentence text, for overlap checks
+        foreach (var c in context)
+        {
+            var best = BestSentence(question, c.Chunk.Text);
+            if (best is null) continue;
+            // Dedup against the RAW sentences, not the citation-decorated ones: an entry
+            // in `sentences` carries a trailing " [N]", so `best.Contains(entry)` could
+            // never match (the suffix isn't in `best`), silently disabling the "a later,
+            // longer sentence subsumes an earlier one" direction. Comparing bare text
+            // makes containment work both ways.
+            var alreadyCovered = pickedRaw.Any(s =>
+                s.Contains(best, StringComparison.OrdinalIgnoreCase) ||
+                best.Contains(s, StringComparison.OrdinalIgnoreCase));
+            if (alreadyCovered) continue;
+            pickedRaw.Add(best);
+            sentences.Add($"{best} [{c.Citation}]");
+        }
+        return sentences.Count > 0 ? string.Join(" ", sentences) : null;
     }
 
     /// <summary>Pick the sentence from a chunk most relevant to the question (extractive answer helper).</summary>

@@ -336,6 +336,67 @@ public class RagPipelineTests
         Assert.Contains("water damage", sentence!);
     }
 
+    // ── StitchAnswer (extractive composition + dedup) ────────
+
+    [Fact]
+    public void StitchAnswer_EmptyContext_ReturnsNull()
+        => Assert.Null(RagPipeline.StitchAnswer("anything", Array.Empty<RetrievedChunk>()));
+
+    [Fact]
+    public void StitchAnswer_TagsEachSentenceWithItsCitation()
+    {
+        var ctx = new[]
+        {
+            Hit("d1", 0, "The warranty does not cover water damage.", 1),
+            Hit("d1", 1, "Returns are accepted within 30 days.", 2),
+        };
+        var answer = RagPipeline.StitchAnswer("warranty water damage and returns", ctx);
+        Assert.NotNull(answer);
+        Assert.Contains("water damage [1]", answer!);
+        Assert.Contains("30 days [2]", answer!);
+    }
+
+    [Fact]
+    public void StitchAnswer_DropsSentenceContainedInAnEarlierPick()
+    {
+        // A later chunk's best sentence is a substring of one already stitched in
+        // (a classic overlapping-chunk artifact). It must be dropped, not repeated.
+        var ctx = new[]
+        {
+            Hit("d1", 0, "The warranty does not cover water damage claims.", 1),
+            Hit("d1", 1, "warranty does not cover water damage", 2),
+        };
+        var answer = RagPipeline.StitchAnswer("warranty cover water damage", ctx);
+        Assert.NotNull(answer);
+        Assert.Contains("[1]", answer!);
+        Assert.DoesNotContain("[2]", answer!);
+    }
+
+    [Fact]
+    public void StitchAnswer_DropsEarlierPickSubsumedByALaterLongerSentence()
+    {
+        // Regression: the earlier pick is SHORTER and fully contained in a later,
+        // longer sentence. When the later chunk is processed, the raw-text overlap
+        // check (later.Contains(earlier)) fires and the later duplicate is dropped,
+        // leaving exactly the first citation. This ONLY works when the overlap is
+        // checked against the RAW sentence text — checking against the
+        // citation-decorated "... [N]" string silently disabled this direction.
+        var ctx = new[]
+        {
+            Hit("d1", 0, "warranty covers water damage", 1),
+            Hit("d1", 1, "The full warranty covers water damage and accidental spills.", 2),
+        };
+        var answer = RagPipeline.StitchAnswer("warranty covers water damage spills", ctx);
+        Assert.NotNull(answer);
+        var citations = System.Text.RegularExpressions.Regex.Matches(answer!, @"\[\d+\]").Count;
+        Assert.Equal(1, citations);
+        Assert.Contains("[1]", answer!);
+        Assert.DoesNotContain("accidental spills", answer!);
+    }
+
+    private static RetrievedChunk Hit(string docId, int index, string text, int citation) =>
+        new(new Chunk(docId, index, text, new Dictionary<string, int>()), 1.0, citation);
+
     // ── Options clamping ─────────────────────────────────────
 
     [Fact]
@@ -464,6 +525,25 @@ class RagPipeline
         foreach (var c in context)
             sb.AppendLine($"[{c.Citation}] ({c.Chunk.DocumentId}) {c.Chunk.Text}");
         return sb.ToString().TrimEnd();
+    }
+
+    public static string? StitchAnswer(string question, IReadOnlyList<RetrievedChunk> context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var sentences = new List<string>();
+        var pickedRaw = new List<string>();
+        foreach (var c in context)
+        {
+            var best = BestSentence(question, c.Chunk.Text);
+            if (best is null) continue;
+            var alreadyCovered = pickedRaw.Any(s =>
+                s.Contains(best, StringComparison.OrdinalIgnoreCase) ||
+                best.Contains(s, StringComparison.OrdinalIgnoreCase));
+            if (alreadyCovered) continue;
+            pickedRaw.Add(best);
+            sentences.Add($"{best} [{c.Citation}]");
+        }
+        return sentences.Count > 0 ? string.Join(" ", sentences) : null;
     }
 
     public static string? BestSentence(string question, string chunkText)
