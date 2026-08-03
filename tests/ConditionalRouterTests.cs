@@ -26,6 +26,36 @@ public class ConditionalRouterTests
         return Task.FromResult(JsonSerializer.Serialize(new { route, confidence, reasoning }));
     }
 
+    // A keyword classifier in the spirit of the conditional-router demo's ClassifierModel:
+    // it reads the customer message out of the rendered prompt and buckets it by keyword.
+    // Keyword matching must be case-insensitive so "ERROR"/"Refund"/"Lawyer" route the same
+    // as their lowercase forms — a case-sensitive Contains silently misrouted those to the
+    // fallback route before this was fixed.
+    private static Task<string> KeywordClassifier(string prompt, CancellationToken ct)
+    {
+        var marker = prompt.IndexOf("message: ", StringComparison.OrdinalIgnoreCase);
+        var msg = marker >= 0 ? prompt[(marker + "message: ".Length)..] : prompt;
+        var lower = msg.ToLowerInvariant();
+        var route =
+            lower.Contains("error") || lower.Contains("crash") ? "technical" :
+            lower.Contains("refund") || lower.Contains("charge") ? "billing" :
+            lower.Contains("lawyer") || lower.Contains("legal") ? "escalation" :
+            "general";
+        return MakeClassifier(route, 0.9, "keyword match");
+    }
+
+    [Theory]
+    [InlineData("my app keeps CRASHING with an ERROR", "technical")]
+    [InlineData("please issue a Refund for the Charge", "billing")]
+    [InlineData("I am contacting my LAWYER", "escalation")]
+    [InlineData("just saying hello", "general")]
+    public async Task ClassifyAsync_KeywordClassifier_IsCaseInsensitive(string message, string expected)
+    {
+        var router = CreateRouter();
+        var result = await router.ClassifyAsync(message, KeywordClassifier);
+        Assert.Equal(expected, result.Route);
+    }
+
     [Fact]
     public async Task ClassifyAsync_TechnicalRoute_ReturnsCorrectly()
     {

@@ -74,16 +74,21 @@ Message: {{message}}",
 // 3. Simulate the classifier model
 Task<string> ClassifierModel(string prompt, CancellationToken ct)
 {
-    // Extract the message from the rendered prompt
-    var msgStart = prompt.IndexOf("Message: ") + 9;
-    var message = prompt[msgStart..].Trim();
+    // Extract the message from the rendered prompt. Guard the marker lookup: if the
+    // template ever changes and "Message: " is absent, IndexOf returns -1 and a naive
+    // `+ 9` would slice from an arbitrary offset (or throw) — fall back to the whole prompt.
+    var marker = prompt.IndexOf("Message: ", StringComparison.Ordinal);
+    var message = (marker >= 0 ? prompt[(marker + "Message: ".Length)..] : prompt).Trim();
 
-    // Simulated classification logic
-    if (message.Contains("error") || message.Contains("crash") || message.Contains("stack trace"))
+    // Simulated classification logic. Match keywords case-insensitively — a real
+    // classifier doesn't care whether the customer typed "ERROR" or "Refund", and a
+    // case-sensitive Contains would silently misroute those to the general handler.
+    var lower = message.ToLowerInvariant();
+    if (lower.Contains("error") || lower.Contains("crash") || lower.Contains("stack trace"))
         return Task.FromResult(JsonSerializer.Serialize(new { route = "technical", confidence = 0.92, reasoning = "Contains error/crash keywords indicating a software issue" }));
-    if (message.Contains("charge") || message.Contains("refund") || message.Contains("invoice") || message.Contains("bill"))
+    if (lower.Contains("charge") || lower.Contains("refund") || lower.Contains("invoice") || lower.Contains("bill"))
         return Task.FromResult(JsonSerializer.Serialize(new { route = "billing", confidence = 0.88, reasoning = "Financial/billing keywords detected" }));
-    if (message.Contains("lawyer") || message.Contains("legal") || message.Contains("sue"))
+    if (lower.Contains("lawyer") || lower.Contains("legal") || lower.Contains("sue"))
         return Task.FromResult(JsonSerializer.Serialize(new { route = "escalation", confidence = 0.95, reasoning = "Legal threat detected — requires human review" }));
     return Task.FromResult(JsonSerializer.Serialize(new { route = "general", confidence = 0.75, reasoning = "No strong category signal; routing to general" }));
 }
