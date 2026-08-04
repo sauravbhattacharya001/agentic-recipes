@@ -59,7 +59,7 @@ var debaters1 = new[]
 var orchestrator = new DebateOrchestrator(new DebateOptions
 {
     MaxRounds = 4,
-    DecisiveMargin = 0.34,          // judge lead (of total) that counts as "clear"
+    DecisiveMargin = 0.34,          // head-to-head lead (leader-runnerUp)/(leader+runnerUp) that counts as "clear"
     NormalizeAnswer = a => a.Trim().TrimEnd('.').ToLowerInvariant(),
     OnExchange = PrintExchange,
 });
