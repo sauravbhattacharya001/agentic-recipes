@@ -182,6 +182,46 @@ public class PlanAndExecuteTests
         Assert.Equal(StepStatus.Skipped, result.StepResults.Single().Status);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_NegativeRetryBudget_ClampsToZero_StillAttemptsPrimaryOnce()
+    {
+        // The option documents "Clamped to ≥ 0". A negative budget must NOT drop the
+        // primary entirely (which is what a raw `tryNo <= budget` loop would do for a
+        // negative bound): the step must still be attempted exactly once, then fail
+        // over to skip like a zero budget.
+        var calls = 0;
+        var plan = new Plan("g", new[]
+        {
+            new PlanStep("x", "", critical: false, run: (_, _) => { calls++; throw new StepException("nope"); }),
+        });
+
+        var result = await Executor(retryBudget: -5).ExecuteAsync(plan, EchoStep);
+
+        Assert.Equal(1, calls); // clamped to 0 → one attempt, never zero
+        var step = result.StepResults.Single();
+        Assert.Equal(StepStatus.Skipped, step.Status);
+        Assert.Equal(1, step.Attempts);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NegativeRetryBudget_SucceedingPrimary_ProducesOutput()
+    {
+        // A negative (clamped) budget must not sabotage a primary that would succeed:
+        // the one allowed attempt runs and its output is recorded.
+        var plan = new Plan("g", new[]
+        {
+            new PlanStep("x", ""),
+        });
+
+        var result = await Executor(retryBudget: -1).ExecuteAsync(plan, EchoStep);
+
+        var step = result.StepResults.Single();
+        Assert.Equal(StepStatus.Succeeded, step.Status);
+        Assert.Equal("x-ok", step.Output);
+        Assert.Equal(1, step.Attempts);
+        Assert.True(result.GoalReached);
+    }
+
     // ── Fallback ─────────────────────────────────────────────
 
     [Fact]
