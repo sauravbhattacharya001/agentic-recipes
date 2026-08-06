@@ -272,9 +272,11 @@ class EnsembleVoter
 
         var winner = ranked[0];
         // Consensus: winner share of total weight, computed from the RAW (unrounded)
-        // winner mass and total so it never disagrees with the reported
-        // WinningVotes / TotalWeight. Guard against an all-zero-confidence weighted
-        // ensemble (everyone maximally unsure) → treat as zero consensus.
+        // winner mass and total. WinningVotes/TotalWeight are reported RAW too (only the
+        // per-answer display Tally above is rounded), so the identity
+        // Consensus == WinningVotes / TotalWeight holds exactly for callers that recompute
+        // it. Guard against an all-zero-confidence weighted ensemble (everyone maximally
+        // unsure) → treat as zero consensus.
         var consensus = totalWeight > 0 ? winner.Votes / totalWeight : 0.0;
 
         var verdict = consensus >= _options.ConfidentConsensus ? EnsembleVerdict.Confident
@@ -287,8 +289,8 @@ class EnsembleVoter
             Verdict: verdict,
             Answer: answer,
             Consensus: consensus,
-            WinningVotes: Round(winner.Votes),
-            TotalWeight: Round(totalWeight),
+            WinningVotes: winner.Votes,
+            TotalWeight: totalWeight,
             Tally: tally,
             Samples: samples);
     }

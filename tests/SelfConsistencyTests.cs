@@ -178,10 +178,10 @@ public class SelfConsistencyTests
         var expected = (2.0 / 3.0) / (2.0 / 3.0 + 0.1); // raw winner / raw total
         Assert.Equal("A", r.Answer);
         Assert.Equal(expected, r.Consensus, 12); // Consensus is exact, not display-rounded.
-        // WinningVotes / TotalWeight are rounded to 4 dp for display, so recomputing the
-        // ratio from them tracks Consensus to display precision (the old bug made them
-        // disagree because Consensus itself used a rounded numerator over a raw total).
-        Assert.Equal(r.Consensus, r.WinningVotes / r.TotalWeight, 3);
+        // WinningVotes / TotalWeight are now reported RAW (only the per-answer Tally is
+        // display-rounded), so recomputing the ratio from them equals Consensus EXACTLY,
+        // not merely to display precision.
+        Assert.Equal(r.Consensus, r.WinningVotes / r.TotalWeight, 12);
     }
 
     [Fact]
@@ -430,8 +430,9 @@ class EnsembleVoter
             : samples.Count;
 
         var winner = ranked[0];
-        // Consensus is computed from the RAW (unrounded) winner mass and total so it
-        // never disagrees with the reported WinningVotes / TotalWeight.
+        // Consensus is computed from the RAW (unrounded) winner mass and total. The
+        // reported WinningVotes/TotalWeight are RAW too (only the display Tally is
+        // rounded), so Consensus == WinningVotes / TotalWeight holds exactly.
         var consensus = totalWeight > 0 ? winner.Votes / totalWeight : 0.0;
 
         var verdict = consensus >= _options.ConfidentConsensus ? EnsembleVerdict.Confident
@@ -444,8 +445,8 @@ class EnsembleVoter
             Verdict: verdict,
             Answer: answer,
             Consensus: consensus,
-            WinningVotes: Round(winner.Votes),
-            TotalWeight: Round(totalWeight),
+            WinningVotes: winner.Votes,
+            TotalWeight: totalWeight,
             Tally: tally,
             Samples: samples);
     }
