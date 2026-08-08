@@ -508,6 +508,47 @@ public class TreeOfThoughtsTests
     }
 
     [Fact]
+    public async Task SearchAsync_BreadthFirst_NarrowBeam_ExpandsLevelByLevel()
+    {
+        // Regression: the existing breadth-first test uses a beam (8) so wide the
+        // frontier never trims, so it never exercised BFS *with* an active beam. The
+        // documented contract is that BreadthFirst "expands level by level (FIFO),
+        // keeping the beam at each depth" — even when the beam prunes. Here BeamWidth=2
+        // forces trimming: after expanding the root, only the two best depth-1 nodes
+        // survive, and BOTH must be expanded (draining depth 1) before any depth-2 node
+        // is expanded. Capture the depth handed to the expander for each expansion and
+        // assert it is monotonically non-decreasing — never a deeper node before a
+        // shallower open one.
+        var expandDepths = new List<int>();
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 2,
+            MaxDepth = 4,
+            MaxExpansions = 50,
+            Strategy = SearchStrategy.BreadthFirst,
+        });
+
+        await agent.SearchAsync(
+            rootThought: "",
+            expand: (thought, depth) => { expandDepths.Add(depth); return ArithmeticExpander(thought, depth); },
+            // A target the search cannot reach exactly, so it runs until the depth cap
+            // and we observe the full FIFO drain rather than an early solved-stop.
+            evaluate: CloserToTarget(1_000, spread: 500.0));
+
+        Assert.NotEmpty(expandDepths);
+        // Root (depth 0) is expanded first.
+        Assert.Equal(0, expandDepths[0]);
+        // FIFO discipline: expansion depth never decreases — a whole level is drained
+        // before the next one begins, and the beam trimming never reorders across levels.
+        for (var i = 1; i < expandDepths.Count; i++)
+            Assert.True(expandDepths[i] >= expandDepths[i - 1],
+                $"expansion {i} at depth {expandDepths[i]} followed depth {expandDepths[i - 1]} " +
+                "— breadth-first must not expand a deeper node before a shallower open one");
+        // The beam (2) means each non-final level contributes exactly two expansions.
+        Assert.Equal(2, expandDepths.Count(d => d == 1));
+    }
+
+    [Fact]
     public async Task SearchAsync_ExploredList_HasUniqueIncreasingIds()
     {
         var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
