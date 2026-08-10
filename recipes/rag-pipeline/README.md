@@ -106,7 +106,7 @@ var answer = await rag.AskAsync(question, async (q, context, ct) =>
         {{context}}
 
         Question: {{question}}
-        """, new Dictionary<string, string>())
+        """)
         .Render(new Dictionary<string, string>
         {
             ["context"] = RagPipeline.BuildContextBlock(context),

@@ -165,7 +165,7 @@ var result = await agent.SearchAsync(
             Work so far:
             {{w}}
             Propose {{k}} distinct next steps. One per line.
-            """, new Dictionary<string, string>()).Render(new Dictionary<string, string>
+            """).Render(new Dictionary<string, string>
             {
                 ["p"] = problem,
                 ["w"] = thought,
