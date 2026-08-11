@@ -72,7 +72,57 @@ public class RecipeCatalogTests
             string.Join("\n  ", missing));
     }
 
+    /// <summary>
+    /// Every recipe folder must be backed by a test file that proves its pattern.
+    /// The root README promises "every recipe's pattern is proven against a
+    /// deterministic stand-in model" — but nothing else in the suite fails when a
+    /// recipe ships with zero tests (it simply isn't exercised, and the green suite
+    /// says nothing about it). That is the exact drift this meta-test closes: a new
+    /// <c>recipes/&lt;slug&gt;/</c> with no matching <c>tests/*Tests.cs</c> is an
+    /// unproven pattern masquerading as covered.
+    ///
+    /// Test filenames are PascalCase of the slug (sometimes with an extra noun,
+    /// e.g. <c>memory-augmented → MemoryAugmentedChainTests</c>), so we don't demand
+    /// an exact name. Instead we require the slug's hyphen-separated tokens to appear
+    /// in order inside some test filename — robust to those suffixes while still
+    /// catching a genuinely missing test file.
+    /// </summary>
+    [Fact]
+    public void EveryRecipeFolder_HasATestFile()
+    {
+        var (repoRoot, recipesDir) = FindRepo();
+        var folders = RecipeFolders(recipesDir).OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        var testsDir = Path.Combine(repoRoot, "tests");
+        Assert.True(Directory.Exists(testsDir), $"Expected a tests/ directory at {testsDir}");
+
+        // Compare on lowercased, alphanumeric-only forms so casing/word-boundaries
+        // don't matter: the slug "tree-of-thoughts" must appear as the token run
+        // "tree","of","thoughts" inside a test filename like "TreeOfThoughtsTests.cs".
+        var testFileKeys = Directory.GetFiles(testsDir, "*Tests.cs", SearchOption.TopDirectoryOnly)
+            .Select(f => AlphaNumLower(Path.GetFileNameWithoutExtension(f)))
+            .ToList();
+
+        var unproven = new List<string>();
+        foreach (var slug in folders)
+        {
+            var slugKey = AlphaNumLower(slug); // tokens concatenated, order preserved
+            if (!testFileKeys.Any(k => k.Contains(slugKey, StringComparison.Ordinal)))
+                unproven.Add(slug);
+        }
+
+        Assert.True(
+            unproven.Count == 0,
+            "Every recipe under recipes/ must have a matching tests/*Tests.cs file that proves its " +
+            "pattern (root README: \"every recipe's pattern is proven\"), but these have none:\n  " +
+            string.Join("\n  ", unproven));
+    }
+
     // ── Helpers ────────────────────────────────────────────────
+
+    /// <summary>Lowercase, stripped of every non-alphanumeric char (hyphens, casing gone).</summary>
+    private static string AlphaNumLower(string s) =>
+        new string(s.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
 
     private static IReadOnlySet<string> RecipeFolders(string recipesDir) =>
         Directory.GetDirectories(recipesDir)
