@@ -286,10 +286,10 @@ public class ConditionalRouterTests
         var router = CreateRouter();
         var handlers = new Dictionary<string, RouteHandler>
         {
-            ["technical"] = new("Technical", "You are an engineer.", 1, 0),
-            ["billing"] = new("Billing", "You are billing.", 2, 0),
-            ["general"] = new("General", "You are helpful.", 3, 0),
-            ["escalation"] = new("Escalation", "You escalate.", 0, 0)
+            ["technical"] = new("Technical", "You are an engineer.", 1),
+            ["billing"] = new("Billing", "You are billing.", 2),
+            ["general"] = new("General", "You are helpful.", 3),
+            ["escalation"] = new("Escalation", "You escalate.", 0)
         };
 
         var (classification, response) = await router.RouteAsync(
@@ -308,10 +308,10 @@ public class ConditionalRouterTests
         var router = CreateRouter(minConfidence: 0.8);
         var handlers = new Dictionary<string, RouteHandler>
         {
-            ["technical"] = new("Technical", "engineer prompt", 1, 0),
-            ["billing"] = new("Billing", "billing prompt", 2, 0),
-            ["general"] = new("General", "general prompt", 3, 0),
-            ["escalation"] = new("Escalation", "escalation prompt", 0, 0)
+            ["technical"] = new("Technical", "engineer prompt", 1),
+            ["billing"] = new("Billing", "billing prompt", 2),
+            ["general"] = new("General", "general prompt", 3),
+            ["escalation"] = new("Escalation", "escalation prompt", 0)
         };
 
         var (classification, response) = await router.RouteAsync(
@@ -332,7 +332,7 @@ public class ConditionalRouterTests
         // up as a handler - the router must degrade to the fallback handler, not crash.
         var handlers = new Dictionary<string, RouteHandler>
         {
-            ["general"] = new("General", "general prompt", 3, 0)
+            ["general"] = new("General", "general prompt", 3)
         };
 
         var (classification, response) = await router.RouteAsync(
@@ -351,7 +351,7 @@ public class ConditionalRouterTests
         var router = CreateRouter();
         var handlers = new Dictionary<string, RouteHandler>
         {
-            ["billing"] = new("Billing", "billing prompt", 2, 0)
+            ["billing"] = new("Billing", "billing prompt", 2)
         };
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -459,7 +459,7 @@ public class ConditionalRouterTests
 }
 
 // Supporting types needed for compilation
-record RouteHandler(string Name, string SystemPrompt, int Priority, double Confidence);
+record RouteHandler(string Name, string SystemPrompt, int Priority);
 
 record RouterOptions
 {

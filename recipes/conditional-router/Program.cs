@@ -19,24 +19,21 @@ var routes = new Dictionary<string, RouteHandler>
         SystemPrompt: @"You are a senior software engineer. Diagnose the technical issue,
 provide step-by-step resolution, and suggest preventive measures.
 Format: ## Diagnosis\n## Steps\n## Prevention",
-        Priority: 1,
-        Confidence: 0.0),
+        Priority: 1),
 
     ["billing"] = new RouteHandler(
         Name: "Billing & Accounts",
         SystemPrompt: @"You are a billing specialist. Review the account concern,
 explain charges or policies clearly, and offer resolution options.
 Format: ## Issue Summary\n## Explanation\n## Options",
-        Priority: 2,
-        Confidence: 0.0),
+        Priority: 2),
 
     ["general"] = new RouteHandler(
         Name: "General Inquiry",
         SystemPrompt: @"You are a friendly customer service representative.
 Answer the question helpfully and concisely. If the question
 needs specialist routing, say so clearly.",
-        Priority: 3,
-        Confidence: 0.0),
+        Priority: 3),
 
     ["escalation"] = new RouteHandler(
         Name: "Escalation Required",
@@ -44,8 +41,7 @@ needs specialist routing, say so clearly.",
 human intervention. Summarize the issue, assess urgency (low/medium/high/critical),
 and specify which team should handle it.
 Format: ## Summary\n## Urgency\n## Assigned Team\n## Context for Agent",
-        Priority: 0,
-        Confidence: 0.0)
+        Priority: 0)
 };
 
 // 2. Build the router
@@ -232,7 +228,7 @@ Console.WriteLine("Each branch has specialized prompts, context, and response fo
 // ── Supporting types ────────────────────────────────────────
 
 /// <summary>Route handler configuration.</summary>
-record RouteHandler(string Name, string SystemPrompt, int Priority, double Confidence);
+record RouteHandler(string Name, string SystemPrompt, int Priority);
 
 /// <summary>Router configuration.</summary>
 record RouterOptions
