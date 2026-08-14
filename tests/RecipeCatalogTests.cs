@@ -118,6 +118,43 @@ public class RecipeCatalogTests
             string.Join("\n  ", unproven));
     }
 
+    /// <summary>
+    /// The root README's "Patterns Roadmap" is a checklist that advertises every
+    /// orchestration pattern as <c>shipped</c> (<c>- [x]</c>). It is a second, prose
+    /// copy of the catalog and drifts in exactly the ways the table does: a recipe is
+    /// added but its roadmap line is never ticked (or never added), a roadmap item is
+    /// left <c>- [ ]</c> while its recipe already ships, or a checked line survives a
+    /// deleted recipe — each turning the roadmap into a lie. Nothing else in the suite
+    /// notices. The roadmap items are prose (not slugs), so we can't key them to folders
+    /// by name, but the honest invariant this repo maintains is checkable: every roadmap
+    /// item is <em>checked</em> (no half-finished <c>- [ ]</c> entries), and the number
+    /// of checked items equals the number of shipped recipe folders. That pins the
+    /// one-shipped-pattern-per-recipe promise without demanding an exact wording.
+    /// </summary>
+    [Fact]
+    public void PatternsRoadmap_HasOneCheckedItemPerRecipe_AndNoneUnchecked()
+    {
+        var (repoRoot, recipesDir) = FindRepo();
+        var folderCount = RecipeFolders(recipesDir).Count;
+        var readme = File.ReadAllText(Path.Combine(repoRoot, "README.md"));
+
+        // GitHub task-list items: "- [x]" (done) / "- [ ]" (open), at line start
+        // (allowing leading indent). Count each independently.
+        var checkedCount = Regex.Matches(readme, @"(?m)^\s*-\s*\[[xX]\]\s").Count;
+        var uncheckedCount = Regex.Matches(readme, @"(?m)^\s*-\s*\[ \]\s").Count;
+
+        Assert.True(
+            uncheckedCount == 0,
+            $"The Patterns Roadmap must advertise only shipped patterns, but found {uncheckedCount} " +
+            "unchecked \"- [ ]\" item(s). Every listed pattern ships, so every roadmap line must be checked.");
+
+        Assert.True(
+            checkedCount == folderCount,
+            $"The Patterns Roadmap must list exactly one checked item per shipped recipe, but found " +
+            $"{checkedCount} checked roadmap item(s) against {folderCount} recipe folder(s). Add/remove a " +
+            "roadmap line to match the catalog under recipes/.");
+    }
+
     // ── Helpers ────────────────────────────────────────────────
 
     /// <summary>Lowercase, stripped of every non-alphanumeric char (hyphens, casing gone).</summary>
