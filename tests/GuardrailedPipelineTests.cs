@@ -126,6 +126,8 @@ public class GuardrailedPipelineTests
     [InlineData("4111111111111")]   // 13 contiguous digits
     [InlineData("4111 1111 1111 1111")] // 16, space-separated
     [InlineData("4111-1111-1111-1111")] // 16, dash-separated
+    [InlineData("4111-1111 1111-1111")] // 16, mixed dash/space separators
+    [InlineData("4111 1111-1111 1111")] // 16, mixed space/dash separators
     public void CreditCard_ValidLengths_AreDetected(string card)
     {
         var guard = Create();
