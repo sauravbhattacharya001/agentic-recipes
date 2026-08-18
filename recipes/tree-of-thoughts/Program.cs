@@ -427,7 +427,10 @@ class TreeOfThoughtsAgent
                 nodesEvaluated++;
                 _options.OnNode?.Invoke(child);
 
-                if (score > bestNode.Score || (solved && !bestNode.Solved))
+                // A solved child is returned immediately below (as `child`), so it never
+                // needs to become `bestNode` first — `bestNode` only matters on the
+                // non-solved exit paths. Track the best purely by score here.
+                if (score > bestNode.Score)
                     bestNode = child;
 
                 if (solved)

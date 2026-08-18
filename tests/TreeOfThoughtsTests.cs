@@ -489,6 +489,50 @@ public class TreeOfThoughtsTests
     }
 
     [Fact]
+    public async Task SearchAsync_ReturnsSolvedChild_EvenWhenNotTheHighestScoringNode()
+    {
+        // A solved state is returned the instant it is found, regardless of whether it is
+        // the highest-scoring node seen so far. This pins the behavior after dropping the
+        // inert "(solved && !bestNode.Solved)" clause from the best-node update: a solved
+        // child was always returned as `child` on the next line, so promoting it to
+        // `bestNode` first never affected the result. Here the solved state scores LOWER
+        // than a non-solved sibling explored first, so if the search returned `bestNode`
+        // (or the clause mattered) the reported state/score would be the higher sibling's.
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 4,
+            MaxDepth = 2,
+            MaxExpansions = 20,
+            SolvedThreshold = 1.0,
+        });
+
+        // Root expands into two children: "high" (score 0.9, not solved) and "win"
+        // (score 0.5 but explicitly Solved). "high" is scored first and becomes the
+        // running best; "win" solves at a lower score and must still be what's returned.
+        var result = await agent.SearchAsync(
+            "root",
+            expand: (thought, depth) => thought == "root"
+                ? new[]
+                  {
+                      new ThoughtExpansion("go high", "high"),
+                      new ThoughtExpansion("go win", "win"),
+                  }
+                : Array.Empty<ThoughtExpansion>(),
+            evaluate: (state, depth) => state switch
+            {
+                "win" => new ThoughtEvaluation(0.5, true, "solved but lower score"),
+                "high" => new ThoughtEvaluation(0.9, false, "higher but unsolved"),
+                _ => new ThoughtEvaluation(0.1, false, "root"),
+            });
+
+        Assert.True(result.Solved);
+        Assert.Equal(ToTOutcome.Solved, result.Outcome);
+        Assert.Equal("win", result.BestState);
+        Assert.Equal(0.5, result.BestScore, 3);
+        Assert.Equal(new[] { "go win" }, result.SolutionPath);
+    }
+
+    [Fact]
     public async Task SearchAsync_BreadthFirst_DrainsLevelByLevel()
     {
         // Breadth-first keeps the beam but processes the frontier FIFO. With a wide
@@ -770,7 +814,10 @@ class TreeOfThoughtsAgent
                 nodesEvaluated++;
                 _options.OnNode?.Invoke(child);
 
-                if (score > bestNode.Score || (solved && !bestNode.Solved))
+                // Mirrors recipes/tree-of-thoughts/Program.cs: a solved child is returned
+                // immediately below (as `child`), so it never needs to become `bestNode`
+                // first. Track the best purely by score here.
+                if (score > bestNode.Score)
                     bestNode = child;
 
                 if (solved)
