@@ -59,8 +59,8 @@ And it **stops on its own**, reporting *why*:
 | Outcome | Trigger | Meaning for the caller |
 |---------|---------|------------------------|
 | **Solved** | a state hit `SolvedThreshold` (or was flagged solved) | The search found an answer — use `SolutionPath`. |
-| **FrontierExhausted** | the frontier emptied - branches pruned below the floor or dead-ended (also the label for a mixed stop where some branches were pruned and others hit the depth cap) | No reachable state survived; widen the beam or lower the prune floor. |
-| **DepthLimited** | the depth ceiling alone boxed in the search - an open branch hit `MaxDepth` and nothing was pruned or dead-ended | The answer (if any) is deeper than allowed; raise `MaxDepth`. |
+| **FrontierExhausted** | the frontier emptied - branches pruned below the floor, dead-ended, or out-competed and dropped by the beam (also the label for a mixed stop where some branches were pruned and others hit the depth cap) | No reachable state survived; widen the beam or lower the prune floor. |
+| **DepthLimited** | the depth ceiling alone boxed in the search - an open branch hit `MaxDepth`, nothing was pruned or dead-ended, and the beam never had to drop a viable node | The answer (if any) is deeper than allowed; raise `MaxDepth`. |
 | **BudgetExhausted** | `MaxExpansions` was spent | Ran out of compute; raise the budget or sharpen the evaluator. |
 
 Even when it does **not** solve, the agent returns the **best partial state it

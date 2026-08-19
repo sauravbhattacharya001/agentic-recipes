@@ -256,12 +256,14 @@ public class TreeOfThoughtsTests
     public async Task SearchAsync_DepthLimited_RequiresNoPruningOrDeadEnds()
     {
         // Complements the regression above: when the ONLY thing stopping the search is
-        // the depth ceiling (nothing is pruned, no branch dead-ends), the outcome is
-        // DepthLimited. PruneThreshold 0.0 means no reachable score is ever pruned, and
-        // the expander always returns children, so depth is the sole binding constraint.
+        // the depth ceiling (nothing is pruned, no branch dead-ends, and the beam never
+        // discards a viable node), the outcome is DepthLimited. PruneThreshold 0.0 means
+        // no reachable score is ever pruned, the expander always returns children, and the
+        // beam is wide enough to hold the whole frontier — so depth is the sole binding
+        // constraint.
         var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
         {
-            BeamWidth = 4,
+            BeamWidth = 64,          // never trims: no beam-drop can muddy the outcome
             MaxDepth = 2,
             MaxExpansions = 50,
             PruneThreshold = 0.0,
@@ -283,7 +285,10 @@ public class TreeOfThoughtsTests
     public async Task SearchAsync_BeamWidth_BoundsTheOpenFrontier()
     {
         // With beam width 1 and a never-solving evaluator, each round keeps exactly
-        // one open node, so expansions march one-per-depth until the depth cap.
+        // one open node, so expansions march one-per-depth until the depth cap. Because
+        // the beam DISCARDS viable siblings every round, the honest terminal cause is a
+        // beam-bounded FrontierExhausted, not DepthLimited: raising MaxDepth alone would
+        // not have surfaced the dropped branches — widening the beam would.
         var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
         {
             BeamWidth = 1,
@@ -298,9 +303,49 @@ public class TreeOfThoughtsTests
             evaluate: (state, depth) => new ThoughtEvaluation(0.5, false, "flat"));
 
         // root(d0) + one survivor per depth 1..3 expand = 4 expansions, then the
-        // depth-4 survivor cannot grow.
-        Assert.Equal(ToTOutcome.DepthLimited, result.Outcome);
+        // depth-4 survivor cannot grow. The beam dropped viable siblings along the way,
+        // so the stall is frontier-exhaustion, not a pure depth limit.
+        Assert.Equal(ToTOutcome.FrontierExhausted, result.Outcome);
         Assert.Equal(4, result.NodesExpanded);
+    }
+
+    [Fact]
+    public async Task SearchAsync_BeamDropsViableNode_ReportsFrontierExhausted_NotDepthLimited()
+    {
+        // Regression: DepthLimited must NOT be reported when the beam discarded a viable,
+        // still-open node — that stall is beam-bounded, and the fix is a wider beam, not a
+        // deeper MaxDepth. Here the root expands into three flat-scored children; a beam of
+        // 1 keeps the best and DROPS the other two (neither pruned nor dead-ended). The one
+        // survivor then hits the depth cap. Without accounting for the beam drop the old
+        // code would mislabel this DepthLimited (a node did hit MaxDepth); the honest label
+        // is FrontierExhausted.
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 1,
+            MaxDepth = 1,
+            MaxExpansions = 50,
+            PruneThreshold = 0.0,
+            SolvedThreshold = 2.0,   // unreachable
+            Strategy = SearchStrategy.BestFirst,
+        });
+
+        var result = await agent.SearchAsync(
+            rootThought: "root",
+            expand: (thought, depth) => thought == "root"
+                ? new[]
+                  {
+                      new ThoughtExpansion("a", "A"),
+                      new ThoughtExpansion("b", "B"),
+                      new ThoughtExpansion("c", "C"),
+                  }
+                : Array.Empty<ThoughtExpansion>(),
+            evaluate: (state, depth) => new ThoughtEvaluation(0.5, false, "flat"));
+
+        Assert.Equal(ToTOutcome.FrontierExhausted, result.Outcome);
+        Assert.False(result.Solved);
+        // A depth-1 node really existed and was capped, so the old code would have said
+        // DepthLimited — the beam drop is what makes FrontierExhausted the honest answer.
+        Assert.Contains(result.Explored, n => n.Depth == 1);
     }
 
     [Fact]
@@ -778,6 +823,7 @@ class TreeOfThoughtsAgent
         var outcome = ToTOutcome.FrontierExhausted;
         var anyDepthCapped = false;
         var anyPrunedOrDeadEnd = false;
+        var anyBeamDropped = false;
 
         while (frontier.Count > 0)
         {
@@ -831,10 +877,11 @@ class TreeOfThoughtsAgent
                 anyPrunedOrDeadEnd = true;
 
             frontier.AddRange(children);
-            ApplyBeam(frontier, beamWidth);
+            if (ApplyBeam(frontier, beamWidth)) anyBeamDropped = true;
         }
 
-        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !anyPrunedOrDeadEnd && !bestNode.Solved)
+        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped
+            && !anyPrunedOrDeadEnd && !anyBeamDropped && !bestNode.Solved)
             outcome = ToTOutcome.DepthLimited;
 
         return Build(bestNode, outcome, explored, nodesExpanded, nodesEvaluated);
@@ -861,9 +908,9 @@ class TreeOfThoughtsAgent
         return best;
     }
 
-    private void ApplyBeam(List<SearchNode> frontier, int beamWidth)
+    private bool ApplyBeam(List<SearchNode> frontier, int beamWidth)
     {
-        if (frontier.Count <= beamWidth) return;
+        if (frontier.Count <= beamWidth) return false;
 
         var kept = frontier
             .OrderByDescending(n => n.Score)
@@ -873,6 +920,7 @@ class TreeOfThoughtsAgent
             .ToList();
         frontier.Clear();
         frontier.AddRange(kept);
+        return true;
     }
 
     private static TreeOfThoughtsResult Build(

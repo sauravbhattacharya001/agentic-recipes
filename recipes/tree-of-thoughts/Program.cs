@@ -268,8 +268,10 @@ enum ToTOutcome
     BudgetExhausted,
     /// <summary>
     /// The depth ceiling was the SOLE reason the search stopped short: at least one open
-    /// branch hit <c>MaxDepth</c> and nothing was ever pruned or dead-ended. If any branch
-    /// was pruned/dead-ended, the outcome is the more general <see cref="FrontierExhausted"/>.
+    /// branch hit <c>MaxDepth</c>, nothing was ever pruned or dead-ended, and the beam
+    /// never had to discard a viable open node. If any branch was pruned/dead-ended, or
+    /// the beam dropped a still-open node, the outcome is the more general
+    /// <see cref="FrontierExhausted"/>.
     /// </summary>
     DepthLimited
 }
@@ -388,6 +390,7 @@ class TreeOfThoughtsAgent
         var outcome = ToTOutcome.FrontierExhausted;
         var anyDepthCapped = false;      // some open branch could not grow past MaxDepth
         var anyPrunedOrDeadEnd = false;  // some below-max branch produced zero survivors
+        var anyBeamDropped = false;      // the beam discarded a viable, still-open node
 
         while (frontier.Count > 0)
         {
@@ -450,7 +453,7 @@ class TreeOfThoughtsAgent
             // Add the survivors and re-apply the beam: keep only the best
             // `beamWidth` OPEN nodes overall so the tree stays bounded.
             frontier.AddRange(children);
-            ApplyBeam(frontier, beamWidth);
+            if (ApplyBeam(frontier, beamWidth)) anyBeamDropped = true;
         }
 
         // Report DepthLimited only when the depth ceiling was the SOLE thing that
@@ -458,7 +461,14 @@ class TreeOfThoughtsAgent
         // dead-ended. If any branch was pruned/dead-ended (even while an unrelated
         // node also hit MaxDepth), the honest label is the general FrontierExhausted
         // rather than blaming depth.
-        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped && !anyPrunedOrDeadEnd && !bestNode.Solved)
+        // DepthLimited is honest only when the depth ceiling was the SOLE constraint. If
+        // the beam ever discarded a viable open node, the search was really beam-bounded:
+        // those dropped branches were never pruned or dead-ended, they were out-competed
+        // and abandoned, so some of them may well have led to a shallow answer. Reporting
+        // DepthLimited there would wrongly tell the caller to "raise MaxDepth" when the
+        // real lever is a wider beam - so a beam drop keeps the general FrontierExhausted.
+        if (outcome == ToTOutcome.FrontierExhausted && anyDepthCapped
+            && !anyPrunedOrDeadEnd && !anyBeamDropped && !bestNode.Solved)
             outcome = ToTOutcome.DepthLimited;
 
         return Build(bestNode, outcome, explored, nodesExpanded, nodesEvaluated);
@@ -492,10 +502,12 @@ class TreeOfThoughtsAgent
     /// Trim the OPEN frontier down to the best <paramref name="beamWidth"/> nodes.
     /// For breadth-first we keep insertion order (FIFO) among the top scorers so a
     /// level is still drained in order; best-first re-ranks purely by score.
+    /// Returns <c>true</c> when at least one viable open node was discarded, so the
+    /// caller can tell a beam-bounded stall apart from a purely depth-limited one.
     /// </summary>
-    private void ApplyBeam(List<SearchNode> frontier, int beamWidth)
+    private bool ApplyBeam(List<SearchNode> frontier, int beamWidth)
     {
-        if (frontier.Count <= beamWidth) return;
+        if (frontier.Count <= beamWidth) return false;
 
         // Rank by score desc, then by id asc for determinism, take the top beam,
         // then restore id order so breadth-first keeps its FIFO discipline.
@@ -507,6 +519,7 @@ class TreeOfThoughtsAgent
             .ToList();
         frontier.Clear();
         frontier.AddRange(kept);
+        return true;
     }
 
     /// <summary>Assemble the final result, reconstructing the root->best step path.</summary>
