@@ -35,6 +35,13 @@ public class SelfConsistencyTests
         Assert.Equal(EnsembleVerdict.Abstained, r.Verdict);
         Assert.Null(r.Answer);
         Assert.Equal(0.5, r.Consensus, 3);
+
+        // Even on a dead tie the display tally is deterministic: both sides have
+        // equal vote mass, so the tie breaks by first appearance — "yes" (index 0)
+        // heads the tally ahead of "no" (index 1). This pins the recipe's Q2
+        // console output (Tally: yes=2  no=2) so the README stays honest.
+        Assert.Equal("yes", r.Tally[0].Answer);
+        Assert.Equal("no", r.Tally[1].Answer);
     }
 
     [Fact]

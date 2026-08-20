@@ -122,7 +122,7 @@ Q2: "Is a hot dog a sandwich?" (intentionally divisive)
   🛑 Verdict : ABSTAINED
      Answer  : — (abstained, needs escalation)
      Consensus: 50%  (2/4 weight, 4 paths)
-     Tally   : no=2  yes=2
+     Tally   : yes=2  no=2
 
 Q3: "Which algorithm is asymptotically faster?"  (weighted vote)
   ...
