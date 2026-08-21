@@ -141,6 +141,34 @@ public class MemoryAugmentedChainTests
     }
 
     [Fact]
+    public async Task DuplicateFact_ReinforcesDeterministically_WhenTwoMemoriesTieAboveThreshold()
+    {
+        // Two distinct memories share the same two salient tokens ("alpha beta") and
+        // therefore tie on Jaccard overlap against the incoming fact, while their
+        // mutual overlap (0.5) stays below the 0.6 threshold so they DON'T collapse
+        // into one at write time. FindDuplicate must pick the tied match
+        // deterministically (lowest id) rather than depending on scan order.
+        var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0, DuplicateThreshold = 0.6 });
+
+        await agent.ChatAsync("a", (i, r, t) => StoreFact("alpha beta gamma", 0.5, "veg"));
+        await agent.ChatAsync("b", (i, r, t) => StoreFact("alpha beta delta", 0.5, "veg"));
+
+        Assert.Equal(2, agent.Memory.Count);   // 0.5 mutual overlap < 0.6 -> both kept
+        var m1 = agent.Memory[0];
+        var m2 = agent.Memory[1];
+
+        // Incoming shares exactly {alpha, beta} with each -> ties at 2/3 overlap.
+        var third = await agent.ChatAsync("c", (i, r, t) => StoreFact("alpha beta", 0.9, "veg"));
+
+        Assert.Equal(2, agent.Memory.Count);          // reinforced, not duplicated
+        Assert.Single(third.Reinforced);
+        // Deterministic tie-break: the lowest-id (earliest) tied memory is reinforced.
+        var winner = string.CompareOrdinal(m1.Id, m2.Id) < 0 ? m1 : m2;
+        Assert.Equal(winner.Id, third.Reinforced[0].Id);
+        Assert.True(agent.Memory.Single(m => m.Id == winner.Id).Salience >= 0.9);
+    }
+
+    [Fact]
     public async Task EvictsWeakestMemory_WhenOverBudget()
     {
         var agent = new MemoryAugmentedAgent(new MemoryOptions
@@ -441,11 +469,23 @@ class MemoryAugmentedAgent
 
     private MemoryItem? FindDuplicate(string text)
     {
+        // Reinforce the CLOSEST memory above the threshold, not merely the first one
+        // encountered in insertion order (deterministic tie-break on id).
         var tokens = Tokenize(text);
+        MemoryItem? best = null;
+        var bestOverlap = 0.0;
         foreach (var m in _memory)
-            if (Jaccard(tokens, Tokenize(m.Text)) >= Options.DuplicateThreshold)
-                return m;
-        return null;
+        {
+            var overlap = Jaccard(tokens, Tokenize(m.Text));
+            if (overlap < Options.DuplicateThreshold) continue;
+            if (best is null || overlap > bestOverlap ||
+                (overlap == bestOverlap && string.CompareOrdinal(m.Id, best.Id) < 0))
+            {
+                best = m;
+                bestOverlap = overlap;
+            }
+        }
+        return best;
     }
 
     private void Replace(string id, MemoryItem updated)

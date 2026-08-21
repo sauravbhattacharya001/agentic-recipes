@@ -323,11 +323,26 @@ class MemoryAugmentedAgent
 
     private MemoryItem? FindDuplicate(string text)
     {
+        // Reinforce the CLOSEST memory above the threshold, not merely the first one
+        // encountered in insertion order. When several stored facts clear
+        // DuplicateThreshold, refreshing an arbitrary (oldest) one would strengthen a
+        // less-similar memory and leave the true near-duplicate to age out — so pick
+        // the max-Jaccard match, breaking ties on id for determinism.
         var tokens = Tokenize(text);
+        MemoryItem? best = null;
+        var bestOverlap = 0.0;
         foreach (var m in _memory)
-            if (Jaccard(tokens, Tokenize(m.Text)) >= Options.DuplicateThreshold)
-                return m;
-        return null;
+        {
+            var overlap = Jaccard(tokens, Tokenize(m.Text));
+            if (overlap < Options.DuplicateThreshold) continue;
+            if (best is null || overlap > bestOverlap ||
+                (overlap == bestOverlap && string.CompareOrdinal(m.Id, best.Id) < 0))
+            {
+                best = m;
+                bestOverlap = overlap;
+            }
+        }
+        return best;
     }
 
     private void Replace(string id, MemoryItem updated)
