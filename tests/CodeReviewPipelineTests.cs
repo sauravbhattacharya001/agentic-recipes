@@ -415,6 +415,55 @@ public class CodeReviewPipelineTests
 
     // ── Helper ───────────────────────────────────────────────
 
+    // Locate a repo directory (recipes/, tests/) by walking up from the test
+    // assembly's base dir — mirrors the resolver used by the meta-tests.
+    private static string FindRepoDir(string name)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, name);
+            if (Directory.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new DirectoryNotFoundException($"Could not locate '{name}' above {AppContext.BaseDirectory}");
+    }
+
+    // ── README ↔ Program honesty ──────────────────────────────
+    // The README documents the exact middleware wiring in a code snippet. That
+    // snippet is the single easiest thing to let drift away from Program.cs
+    // (someone tweaks a constructor arg in code, the doc keeps the old form).
+    // These pin the documented wiring to what the recipe actually constructs,
+    // so the "How It Leverages prompt-lib" block can't silently go stale.
+
+    [Fact]
+    public void Readme_MiddlewareSnippet_MatchesProgramWiring()
+    {
+        var recipeDir = Path.Combine(FindRepoDir("recipes"), "code-review-pipeline");
+        var readme = File.ReadAllText(Path.Combine(recipeDir, "README.md"));
+        var program = File.ReadAllText(Path.Combine(recipeDir, "Program.cs"));
+
+        // Each documented constructor must appear in the README, and the keyword
+        // arguments the recipe actually passes must be documented (not the older
+        // positional-only form). If Program.cs stops using one of these, the doc
+        // is expected to follow — this test is the tripwire.
+        foreach (var mustDocument in new[]
+                 {
+                     "ValidationMiddleware", "requiredVariables:",
+                     "LoggingMiddleware",
+                     "RetryMiddleware", "maxRetries:",
+                     "CachingMiddleware", "maxEntries:",
+                     "MetricsMiddleware",
+                     "order:",
+                 })
+        {
+            Assert.True(readme.Contains(mustDocument, StringComparison.Ordinal),
+                $"README middleware snippet is stale: expected it to document '{mustDocument}'.");
+            Assert.True(program.Contains(mustDocument, StringComparison.Ordinal),
+                $"Program.cs no longer uses '{mustDocument}' — update the README snippet to match.");
+        }
+    }
+
     private static PromptPipeline BuildPipeline()
     {
         return new PromptPipeline()

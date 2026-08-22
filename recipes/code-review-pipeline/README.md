@@ -40,10 +40,10 @@ echo "public void Bad() { Thread.Sleep(10000); }" | dotnet run --project recipes
 
 ```csharp
 var pipeline = new PromptPipeline()
-    .Use(new ValidationMiddleware(maxTokens: 16000))
-    .Use(new LoggingMiddleware(Console.WriteLine))
-    .Use(new RetryMiddleware(maxRetries: 2))
-    .Use(new CachingMiddleware(TimeSpan.FromMinutes(10)))
+    .Use(new ValidationMiddleware(maxTokens: 16000, requiredVariables: new[] { "code" }))
+    .Use(new LoggingMiddleware(Console.WriteLine, order: 5))
+    .Use(new RetryMiddleware(maxRetries: 2, order: 10))
+    .Use(new CachingMiddleware(ttl: TimeSpan.FromMinutes(10), maxEntries: 100, order: 15))
     .Use(new MetricsMiddleware());
 
 // Each stage runs through the same pipeline
