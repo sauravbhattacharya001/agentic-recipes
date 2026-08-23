@@ -4,6 +4,15 @@ using Xunit;
 
 namespace AgenticRecipes.Tests;
 
+/// <summary>
+/// Tests for Recipe 5: Conditional Router.
+/// Mirrors recipes/conditional-router/Program.cs — the recipe-local
+/// <c>RouteHandler</c> and <c>ClassifyResult</c> records and the <c>PromptRouter</c>
+/// classify/fallback logic are re-declared here and driven deterministically.
+/// The mirror reference above puts those mirrored records under the
+/// <see cref="MirrorContractTests"/> field-signature contract so a field
+/// rename/reorder in the recipe can't drift silently past a green suite.
+/// </summary>
 public class ConditionalRouterTests
 {
     private static PromptRouter CreateRouter(

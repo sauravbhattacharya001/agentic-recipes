@@ -465,7 +465,8 @@ public class PlanAndExecuteTests
 // ── Mirrored types under test ────────────────────────────────
 // The recipe's Program.cs is a standalone executable and is NOT referenced by
 // this test assembly, so the logic types it exercises are re-declared here
-// (house convention). Keep these in sync with recipes/plan-and-execute/Program.cs.
+// (house convention). These mirror recipes/plan-and-execute/Program.cs and are
+// kept in sync with it (validated by MirrorContractTests).
 
 class StepException : Exception
 {

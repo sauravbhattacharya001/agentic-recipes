@@ -113,6 +113,69 @@ public class MirrorContractTests
             string.Join("\n  ", offenders));
     }
 
+    /// <summary>
+    /// Closes the gap that lets a mirror escape the field-signature contract entirely:
+    /// the check above only inspects test files that carry a
+    /// <c>mirrors recipes/&lt;name&gt;/Program.cs</c> reference. A test file that
+    /// re-declares a recipe-LOCAL positional record but omits that phrase would never be
+    /// compared, so a field rename/reorder in that recipe could drift silently past a
+    /// green suite. This asserts the inverse: if a test re-declares a positional record
+    /// whose exact field signature matches a recipe-local record, that test file MUST
+    /// carry a mirror reference (so the comparison above actually runs on it).
+    /// </summary>
+    [Fact]
+    public void TestsThatMirrorRecipeLocalRecordsCarryAMirrorReference()
+    {
+        var recipesDir = FindDir("recipes");
+        var testsDir = FindDir("tests");
+
+        // Index every recipe-local positional record by normalized field signature.
+        var recipeSignatures = new HashSet<string>();
+        foreach (var program in Directory.GetFiles(recipesDir, "Program.cs", SearchOption.AllDirectories))
+            foreach (Match m in PositionalRecord.Matches(File.ReadAllText(program)))
+            {
+                var fields = NormalizeFields(m.Groups["args"].Value);
+                if (fields.Count > 0) recipeSignatures.Add(SignatureKey(fields));
+            }
+
+        var offenders = new List<string>();
+        foreach (var testFile in Directory.GetFiles(testsDir, "*Tests.cs", SearchOption.TopDirectoryOnly))
+        {
+            var text = File.ReadAllText(testFile);
+            if (MirrorRef.IsMatch(text)) continue; // already under the contract
+
+            foreach (Match tm in PositionalRecord.Matches(text))
+            {
+                var fields = NormalizeFields(tm.Groups["args"].Value);
+                if (fields.Count == 0) continue;
+                if (recipeSignatures.Contains(SignatureKey(fields)))
+                    offenders.Add(
+                        $"{Path.GetFileName(testFile)}: re-declares record '{tm.Groups["name"].Value}' " +
+                        $"matching a recipe-local record but carries no " +
+                        "'mirrors recipes/<name>/Program.cs' reference — add one so the mirror is validated");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Test files that mirror a recipe-local record must reference the recipe so the " +
+            "field-signature contract covers them:\n  " + string.Join("\n  ", offenders));
+    }
+
+    // A field signature ignores the type NAME (which the tests may prefix to
+    // disambiguate) and compares on ordered field names + normalized non-nullable
+    // core types, matching the tolerance in <see cref="FieldsMatch"/>.
+    private static string SignatureKey(List<string> fields)
+    {
+        var parts = new List<string>(fields.Count);
+        foreach (var f in fields)
+        {
+            var (type, name) = SplitField(f);
+            var nullable = type.EndsWith("?", StringComparison.Ordinal) ? "?" : "";
+            parts.Add($"{type.TrimEnd('?')}{nullable} {name}");
+        }
+        return string.Join(", ", parts);
+    }
+
     // Split a record's argument list into normalized "type name" fields, tolerant of
     // default values, generic commas (IReadOnlyList<string> has none, but be safe),
     // and whitespace/newlines.
