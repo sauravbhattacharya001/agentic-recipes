@@ -65,6 +65,14 @@ trust me here"* is far more useful in an autonomous pipeline than one that alway
 sounds sure. **It would rather flag the hard cases than launder a guess as a
 fact.**
 
+The two thresholds are per-question knobs, not just global defaults. The demo's
+Q2 ("is a hot dog a sandwich?") is *deliberately* divisive, so it raises the floor
+to `MinConsensus = 0.51` — demanding a real >50% majority. A dead 2-vs-2 tie sits
+at exactly 50% consensus, which is now *below* that stricter floor, so the
+ensemble abstains instead of flipping a coin. That's why Q2 abstains at 50% even
+though the library default (0.40) would have called it Tentative — a stricter
+floor is the right call when the question is a genuine judgement call.
+
 ### Conviction vs. headcount (weighted voting)
 
 By default every path casts one equal vote. Flip `WeightByConfidence = true` and
