@@ -81,6 +81,14 @@ votes can lose to two emphatic ones. In the demo's Q3, a bare head-count would
 crown `"B"` (3 vs 2), but the two `"A"` paths are near-certain while the `"B"`
 bloc is hedging, so weighting lets **conviction outvote raw count.**
 
+Q3 also lowers `ConfidentConsensus` to `0.60` (from the `0.66` default), the same
+per-question tuning as Q2's floor. That matters here: the two emphatic `"A"` votes
+(0.97 + 0.95) carry `1.92` of the `3.15` total weight, i.e. **61% consensus** — a
+clear win, but one that would land just *below* the default 2/3 bar and read as
+merely Tentative. Since a confidence-weighted majority this lopsided is exactly the
+signal weighting exists to trust, Q3 sets the confident bar to `0.60` so the verdict
+is `Confident`. (Leave it at the `0.66` default and Q3 reports Tentative instead.)
+
 ## How this differs from the other recipes
 
 | | Self-Consistency | [Multi-Perspective](../multi-perspective/) | [Iterative Refinement](../iterative-refinement/) |
