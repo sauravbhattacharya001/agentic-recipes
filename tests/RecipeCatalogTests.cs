@@ -155,6 +155,35 @@ public class RecipeCatalogTests
             "roadmap line to match the catalog under recipes/.");
     }
 
+    /// <summary>
+    /// The README's "Recipes" table must have exactly one row per recipe folder — no
+    /// duplicates. The other catalog checks are deliberately set-based
+    /// (<see cref="EveryRecipeFolder_IsListedInRootReadmeTable"/> /
+    /// <see cref="EveryReadmeRecipeLink_PointsToARealRecipeFolder"/>), so a recipe listed
+    /// <em>twice</em> in the table — a copy/paste row, or a stale row left behind after a
+    /// rename that happens to reuse an existing slug — passes both: the folder is still
+    /// "listed" and every link still "points" somewhere real. A reader then sees the same
+    /// recipe advertised under two pattern names, which is exactly the catalog drift this
+    /// meta-file exists to prevent. Pin the missing invariant: each recipe slug appears in
+    /// at most one table row.
+    /// </summary>
+    [Fact]
+    public void RecipesTable_ListsEachRecipeAtMostOnce()
+    {
+        var (repoRoot, _) = FindRepo();
+        var duplicates = ReadmeTableRecipeSlugs(repoRoot)
+            .GroupBy(s => s, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} (x{g.Count()})")
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(
+            duplicates.Count == 0,
+            "Each recipe must appear in exactly one row of the root README \"Recipes\" table, " +
+            "but these slugs are listed more than once:\n  " + string.Join("\n  ", duplicates));
+    }
+
     // ── Helpers ────────────────────────────────────────────────
 
     /// <summary>Lowercase, stripped of every non-alphanumeric char (hyphens, casing gone).</summary>
@@ -183,6 +212,24 @@ public class RecipeCatalogTests
         var slugs = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match m in Regex.Matches(readme, @"\]\(recipes/([a-z0-9][a-z0-9-]*)/"))
             slugs.Add(m.Groups[1].Value);
+        return slugs;
+    }
+
+    /// <summary>
+    /// Recipe slugs linked from <em>Markdown table rows</em> (lines beginning with <c>|</c>)
+    /// in the root README, WITH duplicates preserved so the caller can detect a recipe listed
+    /// twice. This differs from <see cref="ReadmeLinkedRecipeSlugs"/> (which de-dupes and scans
+    /// the whole file) by scoping to the Recipes table and keeping multiplicity.
+    /// </summary>
+    private static List<string> ReadmeTableRecipeSlugs(string repoRoot)
+    {
+        var slugs = new List<string>();
+        foreach (var line in File.ReadAllLines(Path.Combine(repoRoot, "README.md")))
+        {
+            if (!line.TrimStart().StartsWith("|")) continue; // table rows only
+            foreach (Match m in Regex.Matches(line, @"\]\(recipes/([a-z0-9][a-z0-9-]*)/"))
+                slugs.Add(m.Groups[1].Value);
+        }
         return slugs;
     }
 
