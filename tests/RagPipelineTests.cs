@@ -96,6 +96,34 @@ public class RagPipelineTests
             Assert.Equal(0, group.Min(c => c.Index));
     }
 
+    [Theory]
+    [InlineData(4, 0)]   // no overlap, exact multiples and a short tail
+    [InlineData(6, 2)]   // overlapping sliding windows
+    [InlineData(5, 4)]   // maximal overlap (step == 1)
+    [InlineData(3, 1)]   // small windows
+    [InlineData(1000, 0)] // one window swallows the whole doc
+    public void Chunk_WindowsCoverEveryWord_NoTailDropped(int chunkSize, int overlap)
+    {
+        // Invariant: the sliding-window chunker must partition each document so that
+        // EVERY original word lands in at least one chunk. A boundary/step bug (e.g. an
+        // off-by-one on the terminating break) would silently drop the final word(s),
+        // making the tail of a document unretrievable. Rebuild the per-document word set
+        // from the chunk texts and assert it equals the source word set.
+        var doc = new Document("d",
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi");
+        var rag = new RagPipeline(new RagOptions { ChunkSize = chunkSize, ChunkOverlap = overlap });
+        rag.Ingest(new[] { doc });
+
+        var sourceWords = doc.Text.Split(' ').ToHashSet();
+        var covered = rag.Chunks
+            .Where(c => c.DocumentId == "d")
+            .SelectMany(c => c.Text.Split(' '))
+            .ToHashSet();
+
+        Assert.Superset(sourceWords, covered);      // no invented words
+        Assert.Empty(sourceWords.Except(covered));  // and none dropped
+    }
+
     // ── Retrieval ────────────────────────────────────────────
 
     [Fact]
