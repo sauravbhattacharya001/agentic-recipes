@@ -350,8 +350,37 @@ public class ConditionalRouterTests
             branchFunc: (sys, msg, ct) => Task.FromResult($"Used: {sys}"),
             handlers: handlers);
 
-        Assert.Equal("technical", classification.Route);
         Assert.Contains("general prompt", response);
+        // The fallback handler actually served the response, so the returned
+        // classification must report the route that handled it (general), not the
+        // handler-less route it was originally classified into (technical) - reported
+        // route == executed handler. The substitution is recorded in the reasoning.
+        Assert.Equal("general", classification.Route);
+        Assert.Contains("technical", classification.Reasoning);
+        Assert.Contains("fallback", classification.Reasoning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RouteAsync_ChosenRouteHasNoHandler_PreservesMeasuredConfidence()
+    {
+        var router = CreateRouter();
+        // Only the fallback handler is wired; the classifier picks 'technical' at a
+        // high confidence. The response is served by the fallback handler, and the
+        // returned classification is re-pointed at 'general' - but the MEASURED
+        // confidence (0.9) must survive, since it is a real signal about the classifier.
+        var handlers = new Dictionary<string, RouteHandler>
+        {
+            ["general"] = new("General", "general prompt", 3)
+        };
+
+        var (classification, _) = await router.RouteAsync(
+            "my app crashed",
+            classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.9, "crash"),
+            branchFunc: (sys, msg, ct) => Task.FromResult("ok"),
+            handlers: handlers);
+
+        Assert.Equal("general", classification.Route);
+        Assert.Equal(0.9, classification.Confidence);
     }
 
     [Fact]
@@ -550,11 +579,21 @@ class PromptRouter
         var classification = await ClassifyAsync(message, classifierFunc, ct);
         // Fall back to the fallback route's handler if the chosen route has none;
         // only throw a clear error if neither is registered (never a bare
-        // KeyNotFoundException, per the graceful-degradation contract).
-        if (!handlers.TryGetValue(classification.Route, out var handler) &&
-            !handlers.TryGetValue(_options.FallbackRoute, out handler))
-            throw new InvalidOperationException(
-                $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
+        // KeyNotFoundException, per the graceful-degradation contract). When the
+        // fallback handler actually serves the response, re-point the returned
+        // classification at that route so reported route == executed handler.
+        if (!handlers.TryGetValue(classification.Route, out var handler))
+        {
+            if (!handlers.TryGetValue(_options.FallbackRoute, out handler))
+                throw new InvalidOperationException(
+                    $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
+            classification = classification with
+            {
+                Route = _options.FallbackRoute,
+                Reasoning = $"No handler for route '{classification.Route}'; " +
+                            $"handled by fallback route '{_options.FallbackRoute}'"
+            };
+        }
         var response = await branchFunc(handler.SystemPrompt, message, ct);
         return (classification, response);
     }

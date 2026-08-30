@@ -344,10 +344,27 @@ class PromptRouter
         // documented "never crash; fall back" contract. Prefer the chosen route's
         // handler, then the fallback route's; only if neither exists do we surface a
         // clear configuration error instead of a bare KeyNotFoundException.
-        if (!handlers.TryGetValue(classification.Route, out var handler) &&
-            !handlers.TryGetValue(_options.FallbackRoute, out handler))
-            throw new InvalidOperationException(
-                $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
+        if (!handlers.TryGetValue(classification.Route, out var handler))
+        {
+            if (!handlers.TryGetValue(_options.FallbackRoute, out handler))
+                throw new InvalidOperationException(
+                    $"No handler registered for route '{classification.Route}' or fallback route '{_options.FallbackRoute}'.");
+
+            // The chosen route had no handler, so the FALLBACK handler actually served
+            // the response. Returning the original classification unchanged would report
+            // Route='technical' while the general handler ran - the reported route and
+            // the executed handler would silently disagree, misleading any caller that
+            // logs or branches on classification.Route. Re-point the returned
+            // classification at the route that actually handled the message (preserving
+            // the measured confidence) and record the substitution in the reasoning, so
+            // reported route == executed handler.
+            classification = classification with
+            {
+                Route = _options.FallbackRoute,
+                Reasoning = $"No handler for route '{classification.Route}'; " +
+                            $"handled by fallback route '{_options.FallbackRoute}'"
+            };
+        }
 
         var response = await branchFunc(handler.SystemPrompt, message, ct);
         return (classification, response);
