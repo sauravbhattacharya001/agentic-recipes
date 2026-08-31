@@ -230,6 +230,52 @@ public class MemoryAugmentedChainTests
     }
 
     [Fact]
+    public async Task RecallingMemory_DecaysSlowerThanAnUnrecalledPeer_UnderDecay()
+    {
+        // Pins the recipe's "recalling a fact refreshes it (it was useful -> keep it
+        // longer)" claim under REAL decay, not with decay disabled. Recall applies a
+        // +0.05 touch bump BEFORE the per-turn decay runs, so a recalled memory loses
+        // less net salience than an identical peer that was not recalled this turn.
+        // Both are written on the same turn (identical starting salience) and only one
+        // has a query-tag overlap, so any salience gap is due solely to the recall touch.
+        var agent = new MemoryAugmentedAgent(new MemoryOptions
+        {
+            DecayPerTurn = 0.12,
+            TopK = 3,
+            MaxItems = 10,
+            MinRelevanceToRecall = 0.05,
+        });
+
+        // Turn 1: seed two facts with the same salience but disjoint tags.
+        await agent.ChatAsync("seed", (i, r, t) => new TurnResult("ok", new List<NewFact>
+        {
+            new("hiking notes", 0.8, new[] { "hiking" }),
+            new("cooking notes", 0.8, new[] { "cooking" }),
+        }));
+
+        var hiking = agent.Memory.Single(m => m.Text == "hiking notes");
+        var cooking = agent.Memory.Single(m => m.Text == "cooking notes");
+        Assert.Equal(hiking.Salience, cooking.Salience, 6); // identical starting point
+        Assert.Equal(0.68, hiking.Salience, 6);             // 0.8 written - 0.12 turn-1 decay
+
+        // Turn 2: a hiking query recalls ONLY the hiking fact; both then decay.
+        var turn = await agent.ChatAsync("tell me about hiking",
+            (i, recalled, t) => new TurnResult("sure", new List<NewFact>()));
+
+        Assert.Single(turn.Recalled);
+        Assert.Equal("hiking notes", turn.Recalled[0].Text);
+
+        var hikingAfter = agent.Memory.Single(m => m.Text == "hiking notes").Salience;
+        var cookingAfter = agent.Memory.Single(m => m.Text == "cooking notes").Salience;
+
+        // Recalled: 0.68 + 0.05 touch - 0.12 decay = 0.61.
+        // Not recalled: 0.68 - 0.12 decay = 0.56.
+        Assert.Equal(0.61, hikingAfter, 6);
+        Assert.Equal(0.56, cookingAfter, 6);
+        Assert.True(hikingAfter > cookingAfter); // recall genuinely slows the fade
+    }
+
+    [Fact]
     public async Task TurnRecord_ReportsRecalledWrittenEvicted()
     {
         var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0, MaxItems = 10, TopK = 3 });
