@@ -80,12 +80,17 @@ Task<string> ClassifierModel(string prompt, CancellationToken ct)
     // classifier doesn't care whether the customer typed "ERROR" or "Refund", and a
     // case-sensitive Contains would silently misroute those to the general handler.
     var lower = message.ToLowerInvariant();
+    // Check the ESCALATION (safety) lane FIRST, honoring its Priority: 0. A message can
+    // legitimately mention both a technical symptom AND a legal threat ("your app keeps
+    // crashing and I'm calling my lawyer"); if technical/billing were tested first, that
+    // message would route to 'technical' and the legal escalation — the whole reason the
+    // safety lane exists — would be silently lost. Highest-priority category wins the tie.
+    if (lower.Contains("lawyer") || lower.Contains("legal") || lower.Contains("sue"))
+        return Task.FromResult(JsonSerializer.Serialize(new { route = "escalation", confidence = 0.95, reasoning = "Legal threat detected — requires human review" }));
     if (lower.Contains("error") || lower.Contains("crash") || lower.Contains("stack trace"))
         return Task.FromResult(JsonSerializer.Serialize(new { route = "technical", confidence = 0.92, reasoning = "Contains error/crash keywords indicating a software issue" }));
     if (lower.Contains("charge") || lower.Contains("refund") || lower.Contains("invoice") || lower.Contains("bill"))
         return Task.FromResult(JsonSerializer.Serialize(new { route = "billing", confidence = 0.88, reasoning = "Financial/billing keywords detected" }));
-    if (lower.Contains("lawyer") || lower.Contains("legal") || lower.Contains("sue"))
-        return Task.FromResult(JsonSerializer.Serialize(new { route = "escalation", confidence = 0.95, reasoning = "Legal threat detected — requires human review" }));
     return Task.FromResult(JsonSerializer.Serialize(new { route = "general", confidence = 0.75, reasoning = "No strong category signal; routing to general" }));
 }
 

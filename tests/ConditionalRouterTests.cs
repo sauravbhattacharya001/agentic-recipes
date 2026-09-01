@@ -45,10 +45,13 @@ public class ConditionalRouterTests
         var marker = prompt.IndexOf("message: ", StringComparison.OrdinalIgnoreCase);
         var msg = marker >= 0 ? prompt[(marker + "message: ".Length)..] : prompt;
         var lower = msg.ToLowerInvariant();
+        // Escalation (the safety lane) is checked FIRST so a message that mentions both a
+        // technical symptom and a legal threat still routes to escalation — mirroring the
+        // recipe's priority-ordered classifier.
         var route =
+            lower.Contains("lawyer") || lower.Contains("legal") ? "escalation" :
             lower.Contains("error") || lower.Contains("crash") ? "technical" :
             lower.Contains("refund") || lower.Contains("charge") ? "billing" :
-            lower.Contains("lawyer") || lower.Contains("legal") ? "escalation" :
             "general";
         return MakeClassifier(route, 0.9, "keyword match");
     }
@@ -58,6 +61,9 @@ public class ConditionalRouterTests
     [InlineData("please issue a Refund for the Charge", "billing")]
     [InlineData("I am contacting my LAWYER", "escalation")]
     [InlineData("just saying hello", "general")]
+    // Priority tie-break: escalation (safety) wins over a co-occurring technical keyword,
+    // so a crash report that also threatens legal action is not lost from the safety lane.
+    [InlineData("your app keeps crashing and I'm calling my lawyer", "escalation")]
     public async Task ClassifyAsync_KeywordClassifier_IsCaseInsensitive(string message, string expected)
     {
         var router = CreateRouter();
