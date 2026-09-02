@@ -453,7 +453,7 @@ class TreeOfThoughtsAgent
             // Add the survivors and re-apply the beam: keep only the best
             // `beamWidth` OPEN nodes overall so the tree stays bounded.
             frontier.AddRange(children);
-            if (ApplyBeam(frontier, beamWidth)) anyBeamDropped = true;
+            if (ApplyBeam(frontier, beamWidth, maxDepth)) anyBeamDropped = true;
         }
 
         // Report DepthLimited only when the depth ceiling was the SOLE thing that
@@ -502,10 +502,14 @@ class TreeOfThoughtsAgent
     /// Trim the OPEN frontier down to the best <paramref name="beamWidth"/> nodes.
     /// For breadth-first we keep insertion order (FIFO) among the top scorers so a
     /// level is still drained in order; best-first re-ranks purely by score.
-    /// Returns <c>true</c> when at least one viable open node was discarded, so the
-    /// caller can tell a beam-bounded stall apart from a purely depth-limited one.
+    /// Returns <c>true</c> only when at least one still-expandable node (depth below
+    /// <paramref name="maxDepth"/>) was discarded, so the caller can tell a
+    /// beam-bounded stall apart from a purely depth-limited one. Dropping a node that
+    /// is already at the depth ceiling is NOT beam-limiting: that node could never be
+    /// expanded anyway, so its loss never cost the search a shallower answer and must
+    /// not suppress an honest DepthLimited verdict.
     /// </summary>
-    private bool ApplyBeam(List<SearchNode> frontier, int beamWidth)
+    private bool ApplyBeam(List<SearchNode> frontier, int beamWidth, int maxDepth)
     {
         if (frontier.Count <= beamWidth) return false;
 
@@ -517,9 +521,15 @@ class TreeOfThoughtsAgent
             .Take(beamWidth)
             .OrderBy(n => n.Id)
             .ToList();
+
+        // A drop is only "beam-limiting" if a dropped node was still expandable; a
+        // dropped node already at max depth was a dead branch regardless of the beam.
+        var keptIds = kept.Select(n => n.Id).ToHashSet();
+        var droppedExpandable = frontier.Any(n => !keptIds.Contains(n.Id) && n.Depth < maxDepth);
+
         frontier.Clear();
         frontier.AddRange(kept);
-        return true;
+        return droppedExpandable;
     }
 
     /// <summary>Assemble the final result, reconstructing the root->best step path.</summary>
