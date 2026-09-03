@@ -83,6 +83,30 @@ public class MultiAgentDebateTests
     }
 
     [Fact]
+    public async Task Converged_RoundLeadingAnswer_IsRegistrationOrderIndependent()
+    {
+        // Same normalized stance ("yes") spelled differently by each debater, equal weight.
+        // The per-round LeadingAnswer read-out must be deterministic across debater order
+        // (it buckets by normalized key, so it has to pin a canonical display spelling
+        // rather than whichever spelling happened to arrive first).
+        var strong = Scripted("Strong", new DebateArgument("clearly", "Yes", 0.7));
+        var weak = Scripted("Weak", new DebateArgument("i suppose", "yes", 0.7));
+
+        var opts = new DebateOptions { MaxRounds = 3 };
+        var forward = await new DebateOrchestrator(opts)
+            .RunAsync("q", new[] { strong, weak }, ConfidenceJudge);
+        var reversed = await new DebateOrchestrator(opts)
+            .RunAsync("q", new[] { weak, strong }, ConfidenceJudge);
+
+        Assert.Equal(
+            forward.Transcript[^1].LeadingAnswer,
+            reversed.Transcript[^1].LeadingAnswer);
+        // Ordinal-min display form ("Yes" < "yes"), and it agrees with the final Answer.
+        Assert.Equal("Yes", forward.Transcript[^1].LeadingAnswer);
+        Assert.Equal(forward.Answer, forward.Transcript[^1].LeadingAnswer);
+    }
+
+    [Fact]
     public async Task Decides_WhenJudgeGivesStableClearLead()
     {
         // Persistent disagreement; one side is consistently scored much higher.
@@ -517,8 +541,10 @@ class DebateOrchestrator
                 scoreByDebater[d.Name] += score;
                 answerByDebater[d.Name] = argument.Answer ?? "";
                 var key = normalize(argument.Answer ?? "");
-                var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: argument.Answer ?? "", Weight: 0.0);
-                weightByAnswer[key] = (prev.Display, prev.Weight + score);
+                var display = argument.Answer ?? "";
+                var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: display, Weight: 0.0);
+                var canonicalDisplay = string.CompareOrdinal(display, prev.Display) < 0 ? display : prev.Display;
+                weightByAnswer[key] = (canonicalDisplay, prev.Weight + score);
             }
 
             var distinctAnswers = answerByDebater.Values.Select(normalize).Distinct().Count();

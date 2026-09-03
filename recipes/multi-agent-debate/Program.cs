@@ -320,8 +320,17 @@ class DebateOrchestrator
                 scoreByDebater[d.Name] += score;
                 answerByDebater[d.Name] = argument.Answer ?? "";
                 var key = normalize(argument.Answer ?? "");
-                var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: argument.Answer ?? "", Weight: 0.0);
-                weightByAnswer[key] = (prev.Display, prev.Weight + score);
+                var display = argument.Answer ?? "";
+                var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: display, Weight: 0.0);
+                // Keep a DETERMINISTIC display form for the bucket: the ordinal-smallest
+                // spelling seen for this normalized answer. Two debaters can converge on the
+                // same normalized stance with different spellings ("Yes" vs "yes"); taking
+                // whichever arrived first would make the round read-out's LeadingAnswer depend
+                // on debater registration order — the exact non-determinism the final
+                // converged Answer is careful to avoid. Pinning the min display keeps both in
+                // agreement regardless of order.
+                var canonicalDisplay = string.CompareOrdinal(display, prev.Display) < 0 ? display : prev.Display;
+                weightByAnswer[key] = (canonicalDisplay, prev.Weight + score);
             }
 
             // 3) Round read-out: did everyone land on the same answer? Who leads overall?
