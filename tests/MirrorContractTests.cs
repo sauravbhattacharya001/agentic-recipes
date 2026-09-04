@@ -20,7 +20,9 @@ namespace AgenticRecipes.Tests;
 ///  2. every positional <c>record</c> mirrored in a test has a type in that recipe's
 ///     <c>Program.cs</c> with the SAME ordered field signature (types + names),
 ///     allowing only a disambiguating type-name prefix (e.g. <c>Reflexion</c>) that
-///     the tests add to avoid collisions in the shared global namespace.
+///     the tests add to avoid collisions in the shared global namespace; and
+///  3. every <c>enum</c> mirrored in a test has the SAME ordered member list as the
+///     recipe's enum (order is behavioural — it is the default backing value).
 /// A drift that these can't see (a changed method body) is out of scope here; these
 /// pin the type-shape contract, which is where field renames/reorders would bite.
 /// </summary>
@@ -33,6 +35,11 @@ public class MirrorContractTests
     // A positional record header: `record Foo(...args...)` possibly spanning lines.
     private static readonly Regex PositionalRecord =
         new(@"\brecord\s+(?<name>\w+)\s*\((?<args>[^)]*)\)", RegexOptions.Singleline);
+
+    // An enum declaration with its brace body: `enum Foo { A, B = 2, C }` (possibly
+    // spanning lines). The body is captured so we can pin the ordered member list.
+    private static readonly Regex EnumDecl =
+        new(@"\benum\s+(?<name>\w+)\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline);
 
     [Fact]
     public void EveryMirrorReferenceNamesAnExistingRecipe()
@@ -250,6 +257,95 @@ public class MirrorContractTests
                 return (field[..i].Trim(), field[(i + 1)..].Trim());
         }
         return (field, "");
+    }
+
+    /// <summary>
+    /// Extends the mirror contract to <c>enum</c>s. Records are covered above, but
+    /// several recipes also mirror an enum (e.g. <c>GuardAction</c>, <c>ReflexionOutcome</c>,
+    /// <c>ToTOutcome</c>) into their test file, and enum member ORDER is behavioural in
+    /// C# — the default backing value is the ordinal position, so a reorder silently
+    /// changes every comparison, serialization, and switch-default that leans on it.
+    /// The record check can't see that, so a mirrored enum could drift (a reordered,
+    /// renamed, added, or removed member) past a green suite. This asserts that any
+    /// enum re-declared in a test whose name matches a recipe-local enum has the SAME
+    /// ordered member names as the recipe's definition.
+    /// </summary>
+    [Fact]
+    public void MirroredEnumsMatchTheRecipeMemberOrder()
+    {
+        var recipesDir = FindDir("recipes");
+        var testsDir = FindDir("tests");
+
+        // Index every recipe-local enum by name → ordered member list. Enum names are
+        // not prefixed for disambiguation (unlike mirrored record types), so a plain
+        // name match is exact.
+        var recipeEnums = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var program in Directory.GetFiles(recipesDir, "Program.cs", SearchOption.AllDirectories))
+            foreach (Match m in EnumDecl.Matches(File.ReadAllText(program)))
+                recipeEnums[m.Groups["name"].Value] = EnumMembers(m.Groups["body"].Value);
+
+        var offenders = new List<string>();
+        var comparisons = 0;
+
+        foreach (var testFile in Directory.GetFiles(testsDir, "*Tests.cs", SearchOption.TopDirectoryOnly))
+        {
+            var text = File.ReadAllText(testFile);
+            foreach (Match tm in EnumDecl.Matches(text))
+            {
+                var name = tm.Groups["name"].Value;
+                if (!recipeEnums.TryGetValue(name, out var recipeMembers)) continue;
+
+                var testMembers = EnumMembers(tm.Groups["body"].Value);
+                if (testMembers.Count == 0) continue;
+                comparisons++;
+
+                if (!recipeMembers.SequenceEqual(testMembers, StringComparer.Ordinal))
+                    offenders.Add(
+                        $"{Path.GetFileName(testFile)}: mirrored enum '{name}' members " +
+                        $"[{string.Join(", ", testMembers)}] differ from the recipe's " +
+                        $"[{string.Join(", ", recipeMembers)}] (order matters — it is the backing value)");
+            }
+        }
+
+        Assert.True(comparisons > 0, "Expected to compare at least one mirrored enum.");
+        Assert.True(offenders.Count == 0,
+            "Mirrored enums must match the recipe's ordered member list (drift detected):\n  " +
+            string.Join("\n  ", offenders));
+    }
+
+    // Parse an enum body into its ordered member NAMES, dropping explicit `= value`
+    // assignments, line/block comments, and empty trailing entries. A member value
+    // can itself contain commas (e.g. `= (1 << 0)`), so split on top-level commas.
+    private static List<string> EnumMembers(string body)
+    {
+        // Strip comments first so a `// A, B` note can't be read as members.
+        body = Regex.Replace(body, @"/\*.*?\*/", " ", RegexOptions.Singleline);
+        body = Regex.Replace(body, @"//[^\n]*", " ");
+
+        var members = new List<string>();
+        var depth = 0;
+        var start = 0;
+        void Flush(string raw)
+        {
+            var token = raw.Trim();
+            if (token.Length == 0) return;
+            var eq = token.IndexOf('=');
+            if (eq >= 0) token = token[..eq].Trim();
+            if (token.Length > 0) members.Add(token);
+        }
+        for (var i = 0; i < body.Length; i++)
+        {
+            var c = body[i];
+            if (c is '(' or '[' or '<') depth++;
+            else if (c is ')' or ']' or '>') depth--;
+            else if (c == ',' && depth == 0)
+            {
+                Flush(body[start..i]);
+                start = i + 1;
+            }
+        }
+        Flush(body[start..]);
+        return members;
     }
 
     private static string FindDir(string name)
