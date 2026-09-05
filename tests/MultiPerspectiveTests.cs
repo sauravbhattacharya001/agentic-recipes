@@ -299,6 +299,48 @@ public class MultiPerspectiveTests
         Assert.DoesNotContain("{parallel_2}", captured);
     }
 
+    [Fact]
+    public async Task Execute_FanOut_InputOutputFlowsIntoEachParallelPrompt()
+    {
+        // The fan-OUT half of the data flow: the input (framing) node's OUTPUT must be
+        // substituted into every parallel node's {input} slot before it runs. The
+        // existing fan-in test (Execute_FanIn_AggregatorPromptEmbedsEachParallelOutput)
+        // proves parallel→aggregator wiring but says nothing about input→parallel — a
+        // plan that ran the input node yet fed each perspective an empty or literal
+        // "{input}" (instead of the frame's output) would pass every other test here.
+        // Capture the exact prompt each perspective was invoked with and assert the
+        // frame's output landed in it with no unresolved placeholder.
+        var captured = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        var orchestrator = new PromptOrchestrator(async prompt =>
+        {
+            await Task.Delay(1);
+            if (prompt.StartsWith("Analyze the topic:")) return "FRAMED_INPUT";
+            if (prompt.StartsWith("As an") || prompt.StartsWith("As a"))
+            {
+                captured.Add(prompt); // a parallel perspective prompt, fully rendered
+                return "PERSPECTIVE";
+            }
+            return "AGG";
+        });
+
+        var plan = BuildPlan();
+        var execution = await orchestrator.ExecuteAsync(plan,
+            new Dictionary<string, string> { ["topic"] = "fan-out wiring" });
+
+        Assert.Equal(OrchestratorStatus.Completed, execution.Status);
+
+        var parallelPrompts = captured.ToList();
+        Assert.Equal(3, parallelPrompts.Count);
+        Assert.All(parallelPrompts, p =>
+        {
+            // The input node's output was substituted into this perspective's {input} slot,
+            Assert.Contains("FRAMED_INPUT", p);
+            // and the literal placeholder was fully resolved (no dangling "{input}").
+            Assert.DoesNotContain("{input}", p);
+        });
+    }
+
     // ── Report Generation ────────────────────────────────────
 
     [Fact]
