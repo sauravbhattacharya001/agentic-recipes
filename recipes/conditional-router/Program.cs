@@ -369,6 +369,16 @@ class PromptRouter
                 Reasoning = $"No handler for route '{classification.Route}'; " +
                             $"handled by fallback route '{_options.FallbackRoute}'"
             };
+
+            // ClassifyAsync already fired OnRouteSelected with the PRE-substitution
+            // route (the handler-less one it classified into). Re-notify with the route
+            // that actually handled the message so the observability hook agrees with
+            // the returned classification and the executed handler - the same
+            // "reported route == executed handler" invariant the reasoning rewrite above
+            // preserves. Without this, an operator watching OnRouteSelected sees
+            // 'technical' while 'general' served the reply.
+            _options.OnRouteSelected?.Invoke(
+                classification.Route, classification.Confidence, classification.Reasoning);
         }
 
         var response = await branchFunc(handler.SystemPrompt, message, ct);

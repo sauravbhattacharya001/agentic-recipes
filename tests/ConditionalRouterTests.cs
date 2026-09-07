@@ -390,6 +390,47 @@ public class ConditionalRouterTests
     }
 
     [Fact]
+    public async Task RouteAsync_ChosenRouteHasNoHandler_ReNotifiesOnRouteSelectedWithExecutedRoute()
+    {
+        // The OnRouteSelected hook is the operator's window into routing decisions. When
+        // the chosen route has no handler and the fallback handler serves the reply, the
+        // hook must ultimately report the route that ACTUALLY handled the message, not the
+        // handler-less route ClassifyAsync first picked - reported route == executed
+        // handler, including in observability. ClassifyAsync fires once (pre-substitution);
+        // RouteAsync fires again post-substitution, so the LAST callback is the honest one.
+        var calls = new List<(string Route, double Confidence, string Reasoning)>();
+        var router = new PromptRouter(new RouterOptions
+        {
+            Routes = new List<string> { "technical", "billing", "general" },
+            ClassifierPrompt = "{{message}}",
+            FallbackRoute = "general",
+            MinConfidence = 0.6,
+            OnRouteSelected = (route, conf, reason) => calls.Add((route, conf, reason))
+        });
+        var handlers = new Dictionary<string, RouteHandler>
+        {
+            ["general"] = new("General", "general prompt", 3)
+        };
+
+        var (classification, _) = await router.RouteAsync(
+            "my app crashed",
+            classifierFunc: async (prompt, ct) => await MakeClassifier("technical", 0.9, "crash"),
+            branchFunc: (sys, msg, ct) => Task.FromResult("ok"),
+            handlers: handlers);
+
+        // Two notifications: the initial classify, then the post-substitution correction.
+        Assert.Equal(2, calls.Count);
+        Assert.Equal("technical", calls[0].Route);          // pre-substitution (from ClassifyAsync)
+        var last = calls[^1];
+        Assert.Equal("general", last.Route);                // the route that actually handled it
+        Assert.Equal(classification.Route, last.Route);     // hook agrees with returned classification
+        Assert.Equal(classification.Confidence, last.Confidence);
+        Assert.Equal(classification.Reasoning, last.Reasoning);
+        Assert.Contains("technical", last.Reasoning);       // records the handler-less origin
+        Assert.Contains("fallback", last.Reasoning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RouteAsync_NoHandlerAndNoFallbackHandler_ThrowsClearError()
     {
         var router = CreateRouter();
@@ -599,6 +640,16 @@ class PromptRouter
                 Reasoning = $"No handler for route '{classification.Route}'; " +
                             $"handled by fallback route '{_options.FallbackRoute}'"
             };
+
+            // ClassifyAsync already fired OnRouteSelected with the PRE-substitution
+            // route (the handler-less one it classified into). Re-notify with the route
+            // that actually handled the message so the observability hook agrees with
+            // the returned classification and the executed handler - the same
+            // "reported route == executed handler" invariant the reasoning rewrite above
+            // preserves. Without this, an operator watching OnRouteSelected sees
+            // 'technical' while 'general' served the reply.
+            _options.OnRouteSelected?.Invoke(
+                classification.Route, classification.Confidence, classification.Reasoning);
         }
         var response = await branchFunc(handler.SystemPrompt, message, ct);
         return (classification, response);
