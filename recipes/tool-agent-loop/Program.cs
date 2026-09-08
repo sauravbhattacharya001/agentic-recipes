@@ -40,8 +40,8 @@ var calculatorTool = new AgentTool(
         // Simple calculator for demo
         double result = expression switch
         {
-            "105 - 62" => 43,
-            "88 - 62" => 26,
+            "105 - 62" => 43,   // Phoenix − Seattle
+            "88 - 62" => 26,    // Miami − Seattle
             "(105 + 88 + 62) / 3" => 85,
             _ => 0
         };
@@ -107,7 +107,8 @@ Task<string> SimulatedModel(List<ConversationMessage> messages, List<AgentTool> 
                {""name"": ""get_weather"", ""arguments"": ""{\""city\"": \""Phoenix\""}""},
                {""name"": ""get_weather"", ""arguments"": ""{\""city\"": \""Miami\""}""}]",
         
-        2 => @"[{""name"": ""calculate"", ""arguments"": ""{\""expression\"": \""105 - 62\""}""}]",
+        2 => @"[{""name"": ""calculate"", ""arguments"": ""{\""expression\"": \""105 - 62\""}""},
+               {""name"": ""calculate"", ""arguments"": ""{\""expression\"": \""88 - 62\""}""}]",
         
         3 => @"Based on my research:
 
@@ -116,8 +117,10 @@ Task<string> SimulatedModel(List<ConversationMessage> messages, List<AgentTool> 
 - Phoenix: 105°F, sunny (humidity 12%)  
 - Miami: 88°F, partly cloudy (humidity 85%)
 
-**Temperature Difference:**
-Phoenix is 43°F warmer than Seattle — the biggest spread among the three cities.
+**Temperature Differences from Seattle:**
+- Phoenix: 43°F warmer (105 − 62)
+- Miami: 26°F warmer (88 − 62)
+Phoenix has the biggest spread from Seattle (43°F > 26°F).
 
 **Recommendation:** If you want warm and dry, Phoenix is your best bet. For moderate weather, Seattle. For warm and humid, Miami.",
         
