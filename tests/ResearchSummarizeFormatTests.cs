@@ -75,6 +75,28 @@ public class ResearchSummarizeFormatTests
     }
 
     [Fact]
+    public void Validate_StepReferencesUnproducedVariable_ReturnsError()
+    {
+        // The whole point of chain.Validate is to catch a mis-wired chain BEFORE any
+        // (paid, slow) model call: a step whose template references a variable that no
+        // prior step produces AND that isn't seeded in the initial vars is unsatisfiable.
+        // The recipe's happy-path validation tests only prove Validate stays quiet when
+        // everything lines up; none proves it actually FIRES on a real dependency gap,
+        // which is the failure mode the recipe's "validate before running" section sells.
+        var chain = new PromptChain()
+            .AddStep("research", new PromptTemplate("Research: {{topic}}"), "raw_data")
+            // 'summarize' consumes {{notes}}, which no earlier step produces and which
+            // is not provided as an initial variable -> unsatisfiable, must be reported.
+            .AddStep("summarize", new PromptTemplate("Summarize: {{notes}}"), "summary");
+
+        var errors = chain.Validate(new Dictionary<string, string> { ["topic"] = "AI" });
+
+        Assert.NotEmpty(errors);
+        Assert.Contains(errors, e => e.Contains("notes"));
+        // And the mis-wiring is surfaced without needing to run the chain at all.
+    }
+
+    [Fact]
     public void Validate_VariableFromPriorStep_IsAvailable()
     {
         // "summarize" step needs {{raw_data}} which is produced by "research".
