@@ -22,7 +22,10 @@ namespace AgenticRecipes.Tests;
 ///     allowing only a disambiguating type-name prefix (e.g. <c>Reflexion</c>) that
 ///     the tests add to avoid collisions in the shared global namespace; and
 ///  3. every <c>enum</c> mirrored in a test has the SAME ordered member list as the
-///     recipe's enum (order is behavioural — it is the default backing value).
+///     recipe's enum (order is behavioural — it is the default backing value). When an
+///     enum name is shared by more than one recipe, the test's mirror reference selects
+///     which recipe's definition to compare against, so a shared name can't silently
+///     validate against the wrong (or last-indexed) recipe.
 /// A drift that these can't see (a changed method body) is out of scope here; these
 /// pin the type-shape contract, which is where field renames/reorders would bite.
 /// </summary>
@@ -276,13 +279,29 @@ public class MirrorContractTests
         var recipesDir = FindDir("recipes");
         var testsDir = FindDir("tests");
 
-        // Index every recipe-local enum by name → ordered member list. Enum names are
-        // not prefixed for disambiguation (unlike mirrored record types), so a plain
-        // name match is exact.
-        var recipeEnums = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // Index every recipe-local enum PER RECIPE, keyed by (recipe, enumName) →
+        // ordered member list. Keying by bare name (as an earlier version did) is unsafe:
+        // two recipes may legitimately declare an enum with the SAME name (e.g. a generic
+        // `Outcome`/`Status`), and a name-only dictionary silently OVERWRITES the first
+        // with the second — so a test mirroring the first recipe's enum would be validated
+        // against the wrong recipe's members, or not at all. That is exactly the kind of
+        // silent drift this guard exists to prevent, so the guard itself must not have the
+        // hole. Resolve each test enum against the recipe it declares it mirrors; only
+        // fall back to a global name match when that name is unique across all recipes.
+        var recipeEnums = new Dictionary<(string Recipe, string Name), List<string>>();
+        var enumRecipes = new Dictionary<string, List<string>>(StringComparer.Ordinal); // name → recipes owning it
         foreach (var program in Directory.GetFiles(recipesDir, "Program.cs", SearchOption.AllDirectories))
+        {
+            var recipe = Path.GetFileName(Path.GetDirectoryName(program)!);
             foreach (Match m in EnumDecl.Matches(File.ReadAllText(program)))
-                recipeEnums[m.Groups["name"].Value] = EnumMembers(m.Groups["body"].Value);
+            {
+                var enumName = m.Groups["name"].Value;
+                recipeEnums[(recipe, enumName)] = EnumMembers(m.Groups["body"].Value);
+                if (!enumRecipes.TryGetValue(enumName, out var owners))
+                    enumRecipes[enumName] = owners = new List<string>();
+                if (!owners.Contains(recipe)) owners.Add(recipe);
+            }
+        }
 
         var offenders = new List<string>();
         var comparisons = 0;
@@ -290,11 +309,32 @@ public class MirrorContractTests
         foreach (var testFile in Directory.GetFiles(testsDir, "*Tests.cs", SearchOption.TopDirectoryOnly))
         {
             var text = File.ReadAllText(testFile);
+            // The recipe this test file declares it mirrors (if any), used to pick the
+            // right definition when an enum name is shared across recipes.
+            var mirrored = MirrorRef.Match(text) is { Success: true } mr ? mr.Groups["name"].Value : null;
+
             foreach (Match tm in EnumDecl.Matches(text))
             {
                 var name = tm.Groups["name"].Value;
-                if (!recipeEnums.TryGetValue(name, out var recipeMembers)) continue;
+                if (!enumRecipes.TryGetValue(name, out var owners)) continue;
 
+                // Resolve which recipe's definition to compare against: prefer the recipe
+                // this test file mirrors; otherwise accept a globally-unique owner. If the
+                // name is shared and the test doesn't say which recipe it mirrors, that is
+                // itself ambiguous drift-risk — flag it rather than guess.
+                string recipe;
+                if (mirrored is not null && owners.Contains(mirrored)) recipe = mirrored;
+                else if (owners.Count == 1) recipe = owners[0];
+                else
+                {
+                    offenders.Add(
+                        $"{Path.GetFileName(testFile)}: mirrored enum '{name}' is declared in " +
+                        $"multiple recipes [{string.Join(", ", owners)}] and the test carries no " +
+                        "matching 'mirrors recipes/<name>/Program.cs' reference to disambiguate");
+                    continue;
+                }
+
+                var recipeMembers = recipeEnums[(recipe, name)];
                 var testMembers = EnumMembers(tm.Groups["body"].Value);
                 if (testMembers.Count == 0) continue;
                 comparisons++;
@@ -302,7 +342,7 @@ public class MirrorContractTests
                 if (!recipeMembers.SequenceEqual(testMembers, StringComparer.Ordinal))
                     offenders.Add(
                         $"{Path.GetFileName(testFile)}: mirrored enum '{name}' members " +
-                        $"[{string.Join(", ", testMembers)}] differ from the recipe's " +
+                        $"[{string.Join(", ", testMembers)}] differ from recipes/{recipe}/Program.cs's " +
                         $"[{string.Join(", ", recipeMembers)}] (order matters — it is the backing value)");
             }
         }
@@ -336,8 +376,13 @@ public class MirrorContractTests
         for (var i = 0; i < body.Length; i++)
         {
             var c = body[i];
-            if (c is '(' or '[' or '<') depth++;
-            else if (c is ')' or ']' or '>') depth--;
+            // Only parenthesis/bracket nesting hides a top-level comma here. Do NOT count
+            // '<'/'>' as nesting: enum member *values* never contain generics, but they
+            // CAN contain shift operators (e.g. a [Flags] enum's `= (1 << 4)`), and '<<'
+            // is not bracket-balanced — counting it would leave depth stuck > 0 for the
+            // rest of the body and silently swallow every later member.
+            if (c is '(' or '[') depth++;
+            else if (c is ')' or ']') depth--;
             else if (c == ',' && depth == 0)
             {
                 Flush(body[start..i]);
@@ -346,6 +391,30 @@ public class MirrorContractTests
         }
         Flush(body[start..]);
         return members;
+    }
+
+    // ── Regression coverage for the enum-mirror parser/resolver ───────────────
+    // EnumMembers is the parser the enum-mirror contract leans on; pin its behaviour
+    // so a parser regression can't quietly weaken the drift guard.
+
+    [Fact]
+    public void EnumMembers_DropsExplicitValuesAndComments_KeepsOrder()
+    {
+        var members = EnumMembers("""
+            // leading note, A, B
+            First,
+            Second = 2,   // trailing note
+            Third = (1 << 4),
+            /* block, comment */ Fourth
+            """);
+        Assert.Equal(new[] { "First", "Second", "Third", "Fourth" }, members);
+    }
+
+    [Fact]
+    public void EnumMembers_ToleratesTrailingCommaAndWhitespace()
+    {
+        Assert.Equal(new[] { "A", "B" }, EnumMembers("  A ,  B , "));
+        Assert.Empty(EnumMembers("   "));
     }
 
     private static string FindDir(string name)
