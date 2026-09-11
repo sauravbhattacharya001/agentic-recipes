@@ -373,7 +373,7 @@ class DebateOrchestrator
             }
         }
 
-        return Resolve(verdict, transcript, scoreByDebater, answerByDebater);
+        return Resolve(verdict, transcript, scoreByDebater, answerByDebater, weightByAnswer);
     }
 
     /// <summary>Current leader and their lead expressed as a share of the head-to-head
@@ -398,7 +398,8 @@ class DebateOrchestrator
         DebateVerdict verdict,
         IReadOnlyList<DebateExchange> transcript,
         IReadOnlyDictionary<string, double> scoreByDebater,
-        IReadOnlyDictionary<string, string> answerByDebater)
+        IReadOnlyDictionary<string, string> answerByDebater,
+        IReadOnlyDictionary<string, (string Display, double Weight)> weightByAnswer)
     {
         var standings = scoreByDebater
             .OrderByDescending(kv => kv.Value)
@@ -413,13 +414,15 @@ class DebateOrchestrator
         switch (verdict)
         {
             case DebateVerdict.Converged:
-                // Everyone agrees on one normalized stance. Report the highest-weighted
-                // display form of it rather than answerByDebater.Values.First(): dictionary
-                // enumeration order is not guaranteed, and two debaters can converge on the
-                // same normalized answer while spelling it differently ("yes" vs "Yes.").
-                // Picking .First() would make the reported answer depend on registration
-                // order; the top-weighted display is deterministic (weight desc, then key).
-                answer = LeadingDisplayAnswer(scoreByDebater, answerByDebater);
+                // Everyone agrees on one normalized stance. Report the SAME canonical
+                // display form the per-round read-out used: the ordinal-smallest spelling
+                // of the highest-weighted normalized answer, taken straight from the
+                // weightByAnswer buckets. Deriving it independently (e.g. the top debater's
+                // raw spelling) could disagree with Transcript[^1].LeadingAnswer whenever
+                // debaters spell the agreed stance differently AND carry unequal weight —
+                // the top-weighted DEBATER's spelling need not be the bucket's canonical
+                // one. Reusing the bucket keeps result.Answer == last LeadingAnswer exactly.
+                answer = LeadingBucketAnswer(weightByAnswer);
                 winner = null; // a converged debate has no "winner" — it's a consensus
                 break;
             case DebateVerdict.Decided:
@@ -443,16 +446,17 @@ class DebateOrchestrator
             Transcript: transcript);
     }
 
-    /// <summary>The display form of the agreed answer with the most cumulative judge weight,
-    /// tie-broken deterministically by display string. Used for a converged verdict so the
-    /// reported answer never depends on debater registration order.</summary>
-    private static string LeadingDisplayAnswer(
-        IReadOnlyDictionary<string, double> scoreByDebater,
-        IReadOnlyDictionary<string, string> answerByDebater)
-        => answerByDebater
-            .OrderByDescending(kv => scoreByDebater.TryGetValue(kv.Key, out var s) ? s : 0.0)
-            .ThenBy(kv => kv.Value, StringComparer.Ordinal)
-            .First().Value;
+    /// <summary>The display form of the highest-weighted normalized answer bucket,
+    /// tie-broken by normalized key (ordinal). This is byte-for-byte the same selection
+    /// the per-round read-out makes for <see cref="DebateExchange.LeadingAnswer"/>, so a
+    /// converged <see cref="DebateResult.Answer"/> always equals the last exchange's
+    /// LeadingAnswer — independent of debater registration order or spelling.</summary>
+    private static string LeadingBucketAnswer(
+        IReadOnlyDictionary<string, (string Display, double Weight)> weightByAnswer)
+        => weightByAnswer
+            .OrderByDescending(kv => kv.Value.Weight)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .First().Value.Display;
 
     private static string DefaultNormalize(string answer) => (answer ?? "").Trim().ToLowerInvariant();
 

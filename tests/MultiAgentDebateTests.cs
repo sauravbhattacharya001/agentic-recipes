@@ -106,6 +106,32 @@ public class MultiAgentDebateTests
         Assert.Equal(forward.Answer, forward.Transcript[^1].LeadingAnswer);
     }
 
+    // Regression: the converged Answer must equal the last exchange's LeadingAnswer even
+    // when the debaters spell the agreed stance differently AND carry UNEQUAL judge weight.
+    // The old resolver picked the top-weighted DEBATER's raw spelling, while the per-round
+    // read-out buckets by normalized answer and pins the ordinal-smallest spelling. When the
+    // higher-weighted debater spelled it "yes" and the lower-weighted "Yes", those two
+    // strategies diverged: Answer="yes" but LeadingAnswer="Yes". Both now read from the same
+    // weightByAnswer bucket, so they agree by construction.
+    [Fact]
+    public async Task Converged_Answer_MatchesLeadingAnswer_WithUnequalWeightAndSpelling()
+    {
+        // Same normalized stance ("yes"); the HIGHER-weighted debater uses the
+        // ordinal-LARGER spelling ("yes") so the two selection strategies would disagree.
+        var strong = Scripted("Strong", new DebateArgument("clearly", "yes", 0.9));
+        var weak = Scripted("Weak", new DebateArgument("i suppose", "Yes", 0.2));
+
+        var opts = new DebateOptions { MaxRounds = 3 };
+        var result = await new DebateOrchestrator(opts)
+            .RunAsync("q", new[] { strong, weak }, ConfidenceJudge);
+
+        Assert.Equal(DebateVerdict.Converged, result.Verdict);
+        // Ordinal-min canonical spelling wins the bucket display ("Yes" < "yes")...
+        Assert.Equal("Yes", result.Transcript[^1].LeadingAnswer);
+        // ...and the final Answer agrees with it despite the top debater spelling it "yes".
+        Assert.Equal(result.Transcript[^1].LeadingAnswer, result.Answer);
+    }
+
     [Fact]
     public async Task Decides_WhenJudgeGivesStableClearLead()
     {
@@ -578,7 +604,7 @@ class DebateOrchestrator
             }
         }
 
-        return Resolve(verdict, transcript, scoreByDebater, answerByDebater);
+        return Resolve(verdict, transcript, scoreByDebater, answerByDebater, weightByAnswer);
     }
 
     private static (string Leader, double Margin) CurrentLead(IReadOnlyDictionary<string, double> scoreByDebater)
@@ -599,7 +625,8 @@ class DebateOrchestrator
         DebateVerdict verdict,
         IReadOnlyList<DebateExchange> transcript,
         IReadOnlyDictionary<string, double> scoreByDebater,
-        IReadOnlyDictionary<string, string> answerByDebater)
+        IReadOnlyDictionary<string, string> answerByDebater,
+        IReadOnlyDictionary<string, (string Display, double Weight)> weightByAnswer)
     {
         var standings = scoreByDebater
             .OrderByDescending(kv => kv.Value)
@@ -614,7 +641,7 @@ class DebateOrchestrator
         switch (verdict)
         {
             case DebateVerdict.Converged:
-                answer = LeadingDisplayAnswer(scoreByDebater, answerByDebater);
+                answer = LeadingBucketAnswer(weightByAnswer);
                 winner = null;
                 break;
             case DebateVerdict.Decided:
@@ -638,13 +665,12 @@ class DebateOrchestrator
             Transcript: transcript);
     }
 
-    private static string LeadingDisplayAnswer(
-        IReadOnlyDictionary<string, double> scoreByDebater,
-        IReadOnlyDictionary<string, string> answerByDebater)
-        => answerByDebater
-            .OrderByDescending(kv => scoreByDebater.TryGetValue(kv.Key, out var s) ? s : 0.0)
-            .ThenBy(kv => kv.Value, StringComparer.Ordinal)
-            .First().Value;
+    private static string LeadingBucketAnswer(
+        IReadOnlyDictionary<string, (string Display, double Weight)> weightByAnswer)
+        => weightByAnswer
+            .OrderByDescending(kv => kv.Value.Weight)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .First().Value.Display;
 
     private static string DefaultNormalize(string answer) => (answer ?? "").Trim().ToLowerInvariant();
 
