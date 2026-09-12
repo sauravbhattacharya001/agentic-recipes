@@ -237,6 +237,26 @@ public class RagPipelineTests
     }
 
     [Fact]
+    public async Task Ask_BelowFloorAbstention_ReportsRealSubFloorTopScore()
+    {
+        // A question that DOES retrieve a matching chunk (top score > 0) but whose best
+        // score falls under an aggressive floor must still surface that real score. The
+        // recipe prints it as the "best relevance {TopScore:F3} < floor" diagnostic an
+        // operator uses to tune MinRelevance; zeroing TopScore on abstain (as the empty-
+        // corpus / no-match paths legitimately do) would make a *below-floor* refusal
+        // indistinguishable from a *no-signal* refusal and silently break floor tuning.
+        var rag = Build(new RagOptions { MinRelevance = 0.99 });
+        var ans = await rag.AskAsync("Does the warranty cover water damage?", CountingGenerator);
+
+        Assert.True(ans.Abstained);
+        Assert.Empty(ans.Context);                       // nothing carried forward
+        Assert.True(ans.TopScore > 0.0,                  // real signal preserved, not zeroed
+            $"expected a positive sub-floor TopScore, got {ans.TopScore}");
+        Assert.True(ans.TopScore < rag.Options.MinRelevance,
+            $"expected TopScore {ans.TopScore} below the floor {rag.Options.MinRelevance}");
+    }
+
+    [Fact]
     public async Task Ask_DoesNotCallGenerator_WhenAbstaining()
     {
         var called = false;
