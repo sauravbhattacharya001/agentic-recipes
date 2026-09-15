@@ -259,7 +259,12 @@ class MemoryAugmentedAgent
             else
             {
                 var item = new MemoryItem(
-                    Id: $"m{++_idSeq}",
+                    // Zero-pad the sequence so the id's ORDINAL order matches insertion
+                    // order. The recall/eviction/duplicate tie-breaks all compare ids with
+                    // StringComparer.Ordinal to mean "earliest wins"; an unpadded "m10"
+                    // sorts BEFORE "m2" ordinally, silently inverting that intent once ten
+                    // or more memories exist. Padding keeps lexical == chronological.
+                    Id: $"m{++_idSeq:D6}",
                     Text: fact.Text,
                     Salience: Clamp01(fact.Salience),
                     CreatedTurn: _turn,

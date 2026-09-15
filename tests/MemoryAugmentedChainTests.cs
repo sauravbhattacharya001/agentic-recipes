@@ -126,6 +126,57 @@ public class MemoryAugmentedChainTests
     }
 
     [Fact]
+    public async Task Eviction_TieBreak_IsChronological_PastNineMemories()
+    {
+        // Regression: ids must sort ORDINALLY in insertion order so the documented
+        // "earliest wins" tie-break holds. With unpadded ids, the 10th memory ("m10")
+        // sorts BEFORE the 2nd ("m2") under StringComparer.Ordinal, inverting the
+        // tie-break exactly when the store first exceeds nine items. Seed eleven facts
+        // with identical salience and no recall/decay so keep-scores tie, forcing the
+        // id tie-break to decide who is evicted first: it must be the earliest-inserted.
+        var agent = new MemoryAugmentedAgent(new MemoryOptions
+        {
+            MaxItems = 10,
+            DecayPerTurn = 0,
+            TopK = 0,          // never recall -> LastUsedTurn stays at each fact's write turn
+            DuplicateThreshold = 1.1, // > 1 so distinct texts never collapse as duplicates
+        });
+
+        for (var n = 1; n <= 11; n++)
+        {
+            var text = $"fact number {n:D2}";
+            await agent.ChatAsync($"t{n}", (i, r, t) => new TurnResult("ok",
+                new List<NewFact> { new(text, 0.5, new[] { $"tag{n:D2}" }) }));
+        }
+
+        // Eleven written, budget ten -> exactly one evicted. All share salience 0.5;
+        // the earliest (lowest LastUsedTurn, then lowest id) must go: the very first fact.
+        Assert.Equal(10, agent.Memory.Count);
+        Assert.DoesNotContain(agent.Memory, m => m.Text == "fact number 01");
+        Assert.Contains(agent.Memory, m => m.Text == "fact number 11");
+    }
+
+    [Fact]
+    public async Task MemoryIds_SortOrdinallyInInsertionOrder_PastNine()
+    {
+        // Directly pin that stored ids are ordinally monotonic with insertion order,
+        // which the recall/eviction/duplicate tie-breaks all rely on.
+        var agent = new MemoryAugmentedAgent(new MemoryOptions
+        {
+            MaxItems = 100, DecayPerTurn = 0, TopK = 0, DuplicateThreshold = 1.1,
+        });
+        for (var n = 1; n <= 12; n++)
+        {
+            var text = $"f{n:D2}";
+            await agent.ChatAsync($"t{n}", (i, r, t) => StoreFact(text, 0.5, $"k{n:D2}"));
+        }
+
+        var ids = agent.Memory.Select(m => m.Id).ToList();
+        var ordinallySorted = ids.OrderBy(x => x, StringComparer.Ordinal).ToList();
+        Assert.Equal(ordinallySorted, ids); // insertion order == ordinal order
+    }
+
+    [Fact]
     public async Task DuplicateFact_ReinforcesInsteadOfAddingCopy()
     {
         var agent = new MemoryAugmentedAgent(new MemoryOptions { DecayPerTurn = 0, DuplicateThreshold = 0.6 });
@@ -458,7 +509,7 @@ class MemoryAugmentedAgent
             else
             {
                 var item = new MemoryItem(
-                    Id: $"m{++_idSeq}",
+                    Id: $"m{++_idSeq:D6}",
                     Text: fact.Text,
                     Salience: Clamp01(fact.Salience),
                     CreatedTurn: _turn,
