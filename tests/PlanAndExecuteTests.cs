@@ -363,6 +363,38 @@ public class PlanAndExecuteTests
         Assert.Contains("img", card.Error);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_CascadeSkip_IsTransitive_ThroughAnUnattemptedMiddleStep()
+    {
+        // The cascade-skip check only inspects a step's DIRECT dependencies, yet the
+        // skip must propagate transitively: root fails → mid cascade-skips (never
+        // attempted) → leaf, which depends on mid (not root), must ALSO cascade-skip
+        // because mid's recorded status is Skipped. This pins that a step skipped
+        // purely by cascade still poisons its own dependents, so the skip flows down
+        // an arbitrarily long chain rather than only one level.
+        // mid and leaf must NEVER run their work — they are dropped by cascade alone.
+        var ranBody = new List<string>();
+        var plan = new Plan("g", new[]
+        {
+            new PlanStep("root", "", critical: false, run: (_, _) => throw new StepException("boom")),
+            new PlanStep("mid",  "", dependsOn: new[] { "root" },
+                run: (_, _) => { ranBody.Add("mid"); return "mid"; }),   // cascade-skips; never runs
+            new PlanStep("leaf", "", dependsOn: new[] { "mid" },
+                run: (_, _) => { ranBody.Add("leaf"); return "leaf"; }), // depends on mid, NOT root
+        });
+
+        var result = await Executor(retryBudget: 0).ExecuteAsync(plan, EchoStep);
+
+        // Neither mid nor leaf ever executed its body — both skipped purely by cascade.
+        Assert.Empty(ranBody);
+        Assert.Equal(new[] { "leaf", "mid", "root" }, result.Skipped.OrderBy(x => x).ToArray());
+        // leaf's recorded reason names its DIRECT dead dependency (mid), the step it
+        // actually declared — not the distant original failure (root).
+        var leaf = result.StepResults.Single(r => r.StepId == "leaf");
+        Assert.Equal(0, leaf.Attempts);
+        Assert.Contains("mid", leaf.Error);
+    }
+
     // ── Critical abort ───────────────────────────────────────
 
     [Fact]
