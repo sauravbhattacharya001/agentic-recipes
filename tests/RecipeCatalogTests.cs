@@ -156,6 +156,34 @@ public class RecipeCatalogTests
     }
 
     /// <summary>
+    /// Every recipe folder must have a row in the README's "Recipes" <em>table</em>
+    /// specifically — not merely a link somewhere in the file.
+    /// <see cref="EveryRecipeFolder_IsListedInRootReadmeTable"/> scans the whole README
+    /// via <see cref="ReadmeLinkedRecipeSlugs"/>, so a recipe that is dropped from the
+    /// advertised table but still incidentally linked in prose (e.g. a cross-link like
+    /// <c>../multi-perspective/</c> inside another recipe's "How this differs" section)
+    /// passes it — the recipe reads as documented while having vanished from the catalog
+    /// table a reader actually browses. That is real catalog drift the set-based check
+    /// leaves open. Pin the stricter invariant against the table-scoped slug set:
+    /// every folder is advertised as its own table row.
+    /// </summary>
+    [Fact]
+    public void EveryRecipeFolder_HasARowInTheRecipesTable()
+    {
+        var (repoRoot, recipesDir) = FindRepo();
+        var folders = RecipeFolders(recipesDir);
+        var tableSlugs = ReadmeTableRecipeSlugs(repoRoot).ToHashSet(StringComparer.Ordinal);
+
+        var missing = folders.Where(f => !tableSlugs.Contains(f)).OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            "Every recipe under recipes/ must have its own row in the root README \"Recipes\" table " +
+            "(a prose cross-link elsewhere in the file does not count), but these have no table row:\n  " +
+            string.Join("\n  ", missing));
+    }
+
+    /// <summary>
     /// The README's "Recipes" table must have exactly one row per recipe folder — no
     /// duplicates. The other catalog checks are deliberately set-based
     /// (<see cref="EveryRecipeFolder_IsListedInRootReadmeTable"/> /
