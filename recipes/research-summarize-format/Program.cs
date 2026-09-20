@@ -127,9 +127,26 @@ public static class Program
         Console.WriteLine(result.FinalResponse);
 
         // ── Export chain definition (reusable) ───────────────
+        // Write next to the built recipe (AppContext.BaseDirectory), not the ambient
+        // current directory: the demo shouldn't litter whatever folder it happens to be
+        // launched from, and BaseDirectory is a stable, known location the operator can
+        // find. Treat the export as best-effort — a read-only or full disk must not crash
+        // the demo AFTER all the real chain work has already succeeded; report and move on.
         var chainJson = chain.ToJson();
-        await File.WriteAllTextAsync("chain-definition.json", chainJson);
+        var outPath = Path.Combine(AppContext.BaseDirectory, "chain-definition.json");
         Console.WriteLine();
-        Console.WriteLine("✓ Chain definition saved to chain-definition.json (reusable)");
+        try
+        {
+            await File.WriteAllTextAsync(outPath, chainJson);
+            Console.WriteLine($"✓ Chain definition saved to {outPath} (reusable)");
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine($"⚠ Could not save chain definition to {outPath}: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Console.WriteLine($"⚠ Could not save chain definition to {outPath}: {ex.Message}");
+        }
     }
 }
