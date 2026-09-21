@@ -163,6 +163,35 @@ public class GuardrailedPipelineTests
         Assert.DoesNotContain("555-123-4567", v.SafeText);
     }
 
+    [Theory]
+    [InlineData("call me at 555-123-4567 anytime", "555-123-4567")]
+    [InlineData("reach me on 555 123 4567 please", "555 123 4567")]
+    [InlineData("dial 555.123.4567 for support", "555.123.4567")]
+    [InlineData("office line (555) 123-4567 open now", "(555) 123-4567")]
+    [InlineData("cell (555)123-4567 after hours", "(555)123-4567")]
+    public void Phone_CommonFormats_AreRedacted(string input, string raw)
+    {
+        var guard = Create();
+        var v = guard.Evaluate(input);
+
+        Assert.Equal(GuardAction.Sanitize, v.Action);
+        Assert.Contains("[REDACTED_PHONE]", v.SafeText);
+        Assert.DoesNotContain(raw, v.SafeText);
+        Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
+    }
+
+    [Theory]
+    [InlineData("order 5551234567 shipped")]   // bare 10-digit run is intentionally not a phone match
+    [InlineData("ref 55 12 34 is fine")]        // too few digits
+    public void Phone_AmbiguousDigits_AreNotRedacted(string input)
+    {
+        var guard = Create();
+        var v = guard.Evaluate(input);
+
+        Assert.DoesNotContain("[REDACTED_PHONE]", v.SafeText);
+        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
+    }
+
     [Fact]
     public void ShortDigitRun_IsNotTreatedAsCreditCard()
     {
@@ -413,7 +442,7 @@ class GuardrailPipeline
         ("email",   new Regex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.Compiled), "[REDACTED_EMAIL]"),
         ("api_key", new Regex(@"\bsk-[A-Za-z0-9]{16,}\b", RegexOptions.Compiled), "[REDACTED_API_KEY]"),
         ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
-        ("phone",   new Regex(@"\b\d{3}[ \-]\d{3}[ \-]\d{4}\b", RegexOptions.Compiled), "[REDACTED_PHONE]"),
+        ("phone",   new Regex(@"(?:\(\d{3}\) ?\d{3}[ .-]?\d{4}|\b\d{3}[ .-]\d{3}[ .-]\d{4}\b)", RegexOptions.Compiled), "[REDACTED_PHONE]"),
     };
 
     public GuardrailPipeline(GuardrailOptions options) => _options = options;

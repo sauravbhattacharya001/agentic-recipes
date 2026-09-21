@@ -195,7 +195,12 @@ class GuardrailPipeline
         // trailing boundary must be a digit so redaction never eats the following
         // space (which previously glued the next word onto the mask).
         ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
-        ("phone",   new Regex(@"\b\d{3}[ \-]\d{3}[ \-]\d{4}\b", RegexOptions.Compiled), "[REDACTED_PHONE]"),
+        // North-American phone numbers in their common written shapes:
+        //   555-123-4567  555 123 4567  555.123.4567  (555) 123-4567  (555)123-4567
+        // The separator class is [ .-] (space/dot/dash); the parenthesized-area-code
+        // form is a separate alternative. Bare 10-digit runs (5551234567) are left
+        // out on purpose — they collide with order numbers / IDs and would over-match.
+        ("phone",   new Regex(@"(?:\(\d{3}\) ?\d{3}[ .-]?\d{4}|\b\d{3}[ .-]\d{3}[ .-]\d{4}\b)", RegexOptions.Compiled), "[REDACTED_PHONE]"),
     };
 
     public GuardrailPipeline(GuardrailOptions options) => _options = options;
