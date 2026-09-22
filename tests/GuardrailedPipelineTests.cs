@@ -394,6 +394,25 @@ public class GuardrailedPipelineTests
         Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
         Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("credit_card"));
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CardShapedRun_DoesNotSpawnPhantomPhoneFinding_RegardlessOfRedaction(bool redact)
+    {
+        // "100-200-300-4000" is a 13-digit run that the credit_card detector claims
+        // in full, but a 10-digit substring ("200-300-4000") also matches the phone
+        // shape. Detection must be deterministic: the higher-severity card match
+        // claims the span so phone never re-reports the SAME digits - and that must
+        // hold whether or not redaction (remediation) happens to be enabled. Before
+        // the fix, findings were computed on the progressively-redacted text, so a
+        // phantom "phone" finding appeared ONLY when RedactPii was off.
+        var guard = new GuardrailPipeline(new GuardrailOptions { RedactPii = redact });
+        var v = guard.Evaluate("wire to account 100-200-300-4000 today");
+
+        Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("credit_card"));
+        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
+    }
 }
 
 // ── Supporting types (mirrors recipes/guardrailed-pipeline/Program.cs) ──
@@ -474,20 +493,23 @@ class GuardrailPipeline
             }
         }
 
-        var sanitized = input ?? string.Empty;
+        var claimed = input ?? string.Empty;
+        var output = input ?? string.Empty;
         bool pii = false;
         foreach (var (label, pattern, mask) in PiiPatterns)
         {
-            var matches = pattern.Matches(sanitized);
+            var matches = pattern.Matches(claimed);
             if (matches.Count == 0) continue;
 
             pii = true;
             var sev = label is "api_key" or "credit_card" ? Severity.High : Severity.Medium;
             Report(new Finding("pii", sev, $"{matches.Count}× {label}"));
 
+            claimed = pattern.Replace(claimed, mask);
             if (_options.RedactPii)
-                sanitized = pattern.Replace(sanitized, mask);
+                output = pattern.Replace(output, mask);
         }
+        var sanitized = output;
 
         var worst = findings.Count == 0 ? Severity.None : findings.Max(f => f.Severity);
 

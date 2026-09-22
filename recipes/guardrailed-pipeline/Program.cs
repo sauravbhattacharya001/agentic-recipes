@@ -236,11 +236,21 @@ class GuardrailPipeline
         }
 
         // ── Guardrail 3: PII / secret detection (+ optional redaction) ──
-        var sanitized = input ?? string.Empty;
+        // `claimed` is the working copy each pattern scans: once an earlier,
+        // higher-severity pattern (e.g. credit_card) matches a span it is masked
+        // out of `claimed`, so a later, looser pattern (e.g. phone) can't re-report
+        // an overlapping substring of the SAME digits. This dedup must be driven by
+        // detection itself, NOT by the RedactPii flag — otherwise the set of
+        // findings would depend on whether remediation happened to be enabled (a
+        // card-shaped run like "100-200-300-4000" would spawn a phantom "phone"
+        // finding only when redaction was off). `output` is what callers receive:
+        // it carries the real masks only when RedactPii is on.
+        var claimed = input ?? string.Empty;
+        var output = input ?? string.Empty;
         bool pii = false;
         foreach (var (label, pattern, mask) in PiiPatterns)
         {
-            var matches = pattern.Matches(sanitized);
+            var matches = pattern.Matches(claimed);
             if (matches.Count == 0) continue;
 
             // The credit_card pattern already requires 13–16 digits (one digit
@@ -250,9 +260,13 @@ class GuardrailPipeline
             var sev = label is "api_key" or "credit_card" ? Severity.High : Severity.Medium;
             Report(new Finding("pii", sev, $"{matches.Count}× {label}"));
 
+            // Always claim the span so later patterns don't double-count it; only
+            // fold the mask into the returned text when redaction is enabled.
+            claimed = pattern.Replace(claimed, mask);
             if (_options.RedactPii)
-                sanitized = pattern.Replace(sanitized, mask);
+                output = pattern.Replace(output, mask);
         }
+        var sanitized = output;
 
         // ── Decide on the worst finding ──
         var worst = findings.Count == 0 ? Severity.None : findings.Max(f => f.Severity);
