@@ -177,14 +177,39 @@ public static class Program
         Console.WriteLine("── Execution Report (Markdown) ──");
         Console.WriteLine(OrchestratorReport.GenerateMarkdown(execution));
 
-        // Save the JSON export (machine-readable) and the Mermaid diagram.
-        var json = OrchestratorReport.GenerateJson(execution);
-        await File.WriteAllTextAsync("execution-report.json", json);
+        // Persist the JSON export (machine-readable) and the Mermaid diagram next to the
+        // built recipe (AppContext.BaseDirectory), not the ambient current directory: the
+        // demo shouldn't litter whatever folder it happens to be launched from, and
+        // BaseDirectory is a stable, known location the operator can find. Treat the
+        // exports as best-effort — a read-only or full disk must not crash the demo AFTER
+        // all the real orchestration work has already succeeded; report and move on.
         Console.WriteLine();
-        Console.WriteLine("✓ JSON export saved to execution-report.json");
+        var jsonPath = Path.Combine(AppContext.BaseDirectory, "execution-report.json");
+        TrySaveReport(jsonPath, OrchestratorReport.GenerateJson(execution), "JSON export");
 
-        var mermaid = OrchestratorReport.GenerateMermaid(execution);
-        await File.WriteAllTextAsync("execution-flow.md", mermaid);
-        Console.WriteLine("✓ Mermaid diagram saved to execution-flow.md");
+        var mermaidPath = Path.Combine(AppContext.BaseDirectory, "execution-flow.md");
+        TrySaveReport(mermaidPath, OrchestratorReport.GenerateMermaid(execution), "Mermaid diagram");
+    }
+
+    /// <summary>
+    /// Best-effort write of a generated report to disk. The demo's real work is already
+    /// done by the time reports are exported, so a filesystem failure (read-only dir,
+    /// full disk, permissions) is reported and swallowed rather than allowed to crash.
+    /// </summary>
+    private static void TrySaveReport(string path, string contents, string label)
+    {
+        try
+        {
+            File.WriteAllText(path, contents);
+            Console.WriteLine($"✓ {label} saved to {path}");
+        }
+        catch (IOException ex)
+        {
+            Console.WriteLine($"⚠ Could not save {label} to {path}: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Console.WriteLine($"⚠ Could not save {label} to {path}: {ex.Message}");
+        }
     }
 }

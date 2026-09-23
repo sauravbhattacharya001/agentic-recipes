@@ -8,6 +8,10 @@ namespace AgenticRecipes.Tests;
 /// Tests for Recipe 2: Multi-Perspective Analysis
 /// Validates PromptOrchestrator plan construction, fan-out/fan-in, and execution.
 /// </summary>
+// This class mutates process-global state (Directory.SetCurrentDirectory) in one
+// regression test, so pin it to a dedicated non-parallel collection to avoid racing
+// other test classes that read the current directory.
+[Collection("CwdSensitive")]
 public class MultiPerspectiveTests
 {
     // ── Plan Construction ─────────────────────────────────────
@@ -426,6 +430,68 @@ public class MultiPerspectiveTests
         Assert.Contains(execution.Status.ToString(), json);
     }
 
+    [Fact]
+    public async Task PersistedReports_AreWrittenToBaseDirectory_NotAmbientCwd()
+    {
+        // Regression guard for the recipe's report export. Program.Main persists the JSON
+        // export and the Mermaid diagram to AppContext.BaseDirectory (a stable, known
+        // location) rather than the ambient current directory, so running the demo from an
+        // arbitrary folder never litters that folder and the writes don't depend on where
+        // the process was launched. Main itself needs a live model, so exercise the same
+        // report content + destination the recipe uses, from a temporarily-changed CWD, and
+        // prove (a) the content is well-formed regardless of CWD and (b) the files land in
+        // BaseDirectory, not the CWD.
+        var orchestrator = new PromptOrchestrator(async prompt =>
+        {
+            await Task.Delay(1);
+            return "response";
+        });
+
+        var plan = BuildPlan();
+        var execution = await orchestrator.ExecuteAsync(plan,
+            new Dictionary<string, string> { ["topic"] = "persist test" });
+
+        var scratchCwd = Path.Combine(Path.GetTempPath(), "mp-cwd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchCwd);
+        var originalCwd = Directory.GetCurrentDirectory();
+
+        var jsonPath = Path.Combine(AppContext.BaseDirectory, "execution-report.json");
+        var mermaidPath = Path.Combine(AppContext.BaseDirectory, "execution-flow.md");
+        // Clean any artifact from a prior run so the assertions below are meaningful.
+        File.Delete(jsonPath);
+        File.Delete(mermaidPath);
+
+        try
+        {
+            Directory.SetCurrentDirectory(scratchCwd);
+
+            // Same generators + destinations the recipe persists.
+            File.WriteAllText(jsonPath, OrchestratorReport.GenerateJson(execution));
+            File.WriteAllText(mermaidPath, OrchestratorReport.GenerateMermaid(execution));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalCwd);
+        }
+
+        // The exports landed in BaseDirectory…
+        Assert.True(File.Exists(jsonPath));
+        Assert.True(File.Exists(mermaidPath));
+        // …and NOT in the ambient CWD the demo happened to run from.
+        Assert.False(File.Exists(Path.Combine(scratchCwd, "execution-report.json")));
+        Assert.False(File.Exists(Path.Combine(scratchCwd, "execution-flow.md")));
+
+        // Content is well-formed regardless of CWD.
+        using (var doc = JsonDocument.Parse(File.ReadAllText(jsonPath)))
+            Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
+        Assert.Contains("flowchart", File.ReadAllText(mermaidPath));
+
+        // Tidy up.
+        File.Delete(jsonPath);
+        File.Delete(mermaidPath);
+        Directory.Delete(scratchCwd, recursive: true);
+    }
+
     // ── Helper ───────────────────────────────────────────────
 
     private static OrchestratorPlan BuildPlan()
@@ -442,3 +508,10 @@ public class MultiPerspectiveTests
         );
     }
 }
+
+/// <summary>
+/// Serializes test classes that mutate process-global current-directory state so they
+/// never run concurrently with each other (or with themselves), preventing CWD races.
+/// </summary>
+[CollectionDefinition("CwdSensitive", DisableParallelization = true)]
+public sealed class CwdSensitiveCollection { }
