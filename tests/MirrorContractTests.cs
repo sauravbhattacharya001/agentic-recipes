@@ -44,6 +44,18 @@ public class MirrorContractTests
     private static readonly Regex EnumDecl =
         new(@"\benum\s+(?<name>\w+)\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline);
 
+    // The header of a property-style (non-positional) record: `record Foo` with no
+    // parameter list before its `{` body, e.g. an options record whose fields are
+    // `{ get; init; }` properties. The brace body is balanced separately (it can
+    // nest, unlike an enum body), so it is not captured here.
+    private static readonly Regex PropertyRecordHeader =
+        new(@"\brecord\s+(?<name>\w+)\s*(?=\{)", RegexOptions.Singleline);
+
+    // A single auto-property field inside a record body: `public T Name { get; init; }`
+    // (the accessor list and any `= default;` are ignored — only type + name matter).
+    private static readonly Regex AutoProperty =
+        new(@"public\s+(?<type>[^\s][^{;]*?)\s+(?<name>\w+)\s*\{\s*get\s*;", RegexOptions.Singleline);
+
     [Fact]
     public void EveryMirrorReferenceNamesAnExistingRecipe()
     {
@@ -415,6 +427,151 @@ public class MirrorContractTests
     {
         Assert.Equal(new[] { "A", "B" }, EnumMembers("  A ,  B , "));
         Assert.Empty(EnumMembers("   "));
+    }
+
+    /// <summary>
+    /// Extends the mirror contract to property-style (non-positional) records — the
+    /// options records every recipe carries (<c>EnsembleOptions</c>, <c>RefinerOptions</c>,
+    /// <c>ReflexionOptions</c>, …). Their fields are <c>{ get; init; }</c> auto-properties,
+    /// so the positional-record contract above never sees them: its regex only matches a
+    /// <c>record Foo(…)</c> parameter list. That leaves a real hole — renaming, removing, or
+    /// retyping an option (e.g. <c>MinConsensus</c> → <c>MinAgreement</c>) in a recipe would
+    /// drift silently past its mirrored copy in <c>tests/</c>, since the test declares its
+    /// own copy of the options record rather than referencing the recipe's. This asserts
+    /// that any property-style record re-declared in a test whose name matches a
+    /// recipe-local one (allowing the tests' disambiguation prefix) exposes the SAME set of
+    /// property (name, non-nullable core type) pairs. Order is irrelevant for named
+    /// properties, so this compares as a set — a rename/add/remove/retype is what bites.
+    /// </summary>
+    [Fact]
+    public void MirroredPropertyRecordsMatchTheRecipePropertySet()
+    {
+        var recipesDir = FindDir("recipes");
+        var testsDir = FindDir("tests");
+
+        // Index every recipe-local property-style record by name → its property set.
+        // Bare-name keying is safe here only because the options records are uniquely
+        // named per recipe; if that ever changes, resolve via the mirror reference like
+        // the enum check does. Guard against a future collision by tracking owners.
+        var recipeProps = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var owners = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var program in Directory.GetFiles(recipesDir, "Program.cs", SearchOption.AllDirectories))
+        {
+            var recipe = Path.GetFileName(Path.GetDirectoryName(program)!);
+            var text = File.ReadAllText(program);
+            foreach (var (name, props) in PropertyRecords(text))
+            {
+                recipeProps[name] = props;
+                if (!owners.TryGetValue(name, out var list)) owners[name] = list = new List<string>();
+                if (!list.Contains(recipe)) list.Add(recipe);
+            }
+        }
+
+        var offenders = new List<string>();
+        var comparisons = 0;
+
+        foreach (var testFile in Directory.GetFiles(testsDir, "*Tests.cs", SearchOption.TopDirectoryOnly))
+        {
+            var text = File.ReadAllText(testFile);
+            foreach (var (name, testPropsRaw) in PropertyRecords(text))
+            {
+                // Match either the exact name or the recipe name with a test-added prefix
+                // (e.g. `Evaluation` → `ReflexionEvaluation`), mirroring the record check.
+                var key = recipeProps.ContainsKey(name)
+                    ? name
+                    : recipeProps.Keys.FirstOrDefault(k => name.EndsWith(k, StringComparison.Ordinal));
+                if (key is null) continue;
+
+                if (owners.TryGetValue(key, out var o) && o.Count > 1)
+                {
+                    offenders.Add(
+                        $"{Path.GetFileName(testFile)}: property record '{name}' matches a name declared " +
+                        $"in multiple recipes [{string.Join(", ", o)}] — make the name unique or resolve via a mirror reference");
+                    continue;
+                }
+
+                comparisons++;
+                var recipeSet = recipeProps[key];
+                // Re-key the test's properties onto the recipe type name so a prefixed
+                // property TYPE (e.g. `Action<ReasoningSample>`) still lines up.
+                var testSet = testPropsRaw;
+                if (!recipeSet.SetEquals(testSet))
+                {
+                    var onlyRecipe = recipeSet.Except(testSet).ToList();
+                    var onlyTest = testSet.Except(recipeSet).ToList();
+                    offenders.Add(
+                        $"{Path.GetFileName(testFile)}: property record '{name}' drifted from recipe '{key}' — " +
+                        (onlyRecipe.Count > 0 ? $"recipe-only [{string.Join(", ", onlyRecipe)}] " : "") +
+                        (onlyTest.Count > 0 ? $"test-only [{string.Join(", ", onlyTest)}]" : ""));
+                }
+            }
+        }
+
+        Assert.True(comparisons > 0, "Expected to compare at least one mirrored property-style record.");
+        Assert.True(offenders.Count == 0,
+            "Mirrored property-style (options) records must expose the same property set (drift detected):\n  " +
+            string.Join("\n  ", offenders));
+    }
+
+    // Enumerate every property-style record in a source file as (name, property set),
+    // where each property is normalized to "<non-nullable-core-type> <name>" with any
+    // disambiguation prefix stripped from the type so a recipe's `Action<ReasoningSample>`
+    // matches a test's identical type. The record body is brace-balanced (bodies nest),
+    // and a positional record (`record Foo(...)`) is skipped — those are covered elsewhere.
+    private static IEnumerable<(string Name, HashSet<string> Props)> PropertyRecords(string source)
+    {
+        foreach (Match h in PropertyRecordHeader.Matches(source))
+        {
+            var braceStart = source.IndexOf('{', h.Index + h.Length);
+            if (braceStart < 0) continue;
+            var body = BalancedBraceBody(source, braceStart);
+            if (body is null) continue;
+
+            var props = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Match p in AutoProperty.Matches(body))
+            {
+                var type = Regex.Replace(p.Groups["type"].Value.Trim(), @"\s+", " ");
+                var name = p.Groups["name"].Value;
+                var nullable = type.EndsWith("?", StringComparison.Ordinal);
+                var core = type.TrimEnd('?');
+                props.Add($"{core}{(nullable ? "?" : "")} {name}");
+            }
+            if (props.Count > 0)
+                yield return (h.Groups["name"].Value, props);
+        }
+    }
+
+    // Return the text inside a `{ ... }` block whose opening brace is at <paramref
+    // name="open"/>, balancing nested braces; null if unbalanced (truncated source).
+    private static string? BalancedBraceBody(string source, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < source.Length; i++)
+        {
+            if (source[i] == '{') depth++;
+            else if (source[i] == '}' && --depth == 0)
+                return source[(open + 1)..i];
+        }
+        return null;
+    }
+
+    [Fact]
+    public void PropertyRecords_ExtractsAutoPropertiesIgnoringDefaultsAndNesting()
+    {
+        var src = """
+            record Opts
+            {
+                public double Threshold { get; init; } = 0.5;
+                public Func<string, string>? Normalize { get; init; }
+                public Action<int, Thing>? OnStep { get; init; }
+            }
+            """;
+        var (name, props) = PropertyRecords(src).Single();
+        Assert.Equal("Opts", name);
+        Assert.Contains("double Threshold", props);
+        Assert.Contains("Func<string, string>? Normalize", props);
+        Assert.Contains("Action<int, Thing>? OnStep", props);
+        Assert.Equal(3, props.Count);
     }
 
     private static string FindDir(string name)
