@@ -288,15 +288,28 @@ public class ResearchSummarizeFormatTests
     {
         // The recipe saves its chain definition to chain-definition.json so it can
         // be reloaded and re-run. Prove the round-trip preserves not just the step
-        // count but the ordered names, output variables, template text, and that a
-        // restored chain still validates against the same inputs.
+        // count but the ordered names, output variables, template text, the
+        // chain-level config (system prompt + max retries, which ToJson emits), and
+        // that a restored chain still validates against the same inputs.
         var chain = BuildChain().WithMaxRetries(2);
-        var restored = PromptChain.FromJson(chain.ToJson());
+        var json = chain.ToJson();
+        var restored = PromptChain.FromJson(json);
 
         Assert.Equal(
             chain.Steps.Select(s => (s.Name, s.OutputVariable)).ToArray(),
             restored.Steps.Select(s => (s.Name, s.OutputVariable)).ToArray());
         Assert.Equal(chain.Steps[0].Template.Template, restored.Steps[0].Template.Template);
+
+        // Config fidelity: ToJson emits "systemPrompt"/"maxRetries", so a faithful
+        // reload must carry them too. PromptChain exposes no getters for either, so
+        // assert via the serialized form -- re-serializing the restored chain must
+        // reproduce the original JSON byte-for-byte (config included, not dropped).
+        // Without this, "PreservesConfig" in the name was never actually tested and
+        // a reload that silently lost the system prompt would stay green.
+        Assert.Contains("\"systemPrompt\"", json);
+        Assert.Contains("\"maxRetries\": 2", json);
+        Assert.Equal(json, restored.ToJson());
+
         Assert.Empty(restored.Validate(new Dictionary<string, string> { ["topic"] = "AI" }));
     }
 
