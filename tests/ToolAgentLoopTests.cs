@@ -109,15 +109,35 @@ public class ToolAgentLoopTests
     [Fact]
     public async Task Agent_MaxTurns_StopsGracefully()
     {
-        var agent = new PromptToolAgent(new AgentOptions { MaxTurns = 2 });
+        // Count how many turns the model was actually driven through, so we can pin the
+        // cap to an EXACT turn budget rather than just "it stopped eventually". A model
+        // that never emits a final answer would loop forever without the cap; the classic
+        // ReAct bug is an off-by-one that runs MaxTurns + 1 (or stops one short). Prove
+        // the agent executes exactly MaxTurns turns and no more.
+        var modelCalls = 0;
+        var turnsCompleted = 0;
+        var agent = new PromptToolAgent(new AgentOptions
+        {
+            MaxTurns = 2,
+            OnTurnCompleted = _ => Interlocked.Increment(ref turnsCompleted),
+        });
         agent.AddTool(CreateWeatherTool());
 
         var result = await agent.RunAsync("Keep going forever",
             modelFunc: (msgs, tools, ct) =>
-                Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]"));
+            {
+                Interlocked.Increment(ref modelCalls);
+                return Task.FromResult("[{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Seattle\\\"}\"}]");
+            });
 
         Assert.False(result.Completed);
         Assert.Contains("maximum turns", result.StopReason);
+        // The cap is a hard EXACTLY-MaxTurns budget: the model is consulted exactly twice,
+        // exactly two turns complete, and that is what the result reports — no silent
+        // extra turn past the limit, and no stopping a turn short.
+        Assert.Equal(2, modelCalls);
+        Assert.Equal(2, turnsCompleted);
+        Assert.Equal(2, result.TotalTurns);
     }
 
     [Fact]
