@@ -287,7 +287,8 @@ class PromptRouter
             // Missing/non-numeric confidence → 0.0, which trips the low-confidence
             // fallback below (treat an unparseable score as "no confidence").
             var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
-                ? confEl.GetDouble()
+                && confEl.TryGetDouble(out var parsedConfidence) && double.IsFinite(parsedConfidence)
+                ? Math.Clamp(parsedConfidence, 0.0, 1.0)
                 : 0.0;
             var reasoning = root.TryGetProperty("reasoning", out var reasonEl) && reasonEl.ValueKind == JsonValueKind.String
                 ? reasonEl.GetString()!

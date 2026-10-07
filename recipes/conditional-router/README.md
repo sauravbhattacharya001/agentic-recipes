@@ -44,7 +44,7 @@ This is the basis for building autonomous support systems, content processing pi
 
 ### Classifier with Confidence
 
-The classifier doesn't just pick a route — it returns a confidence score and reasoning. If confidence is below the threshold (`MinConfidence`), the router falls back to a safe default route.
+The classifier doesn't just pick a route — it returns a confidence score and reasoning. Confidence is normalized to the documented `0.0–1.0` range; non-finite or malformed values are treated as `0.0`. If confidence is below the threshold (`MinConfidence`), the router falls back to a safe default route.
 
 ```csharp
 var router = new PromptRouter(new RouterOptions

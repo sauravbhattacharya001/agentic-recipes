@@ -222,6 +222,34 @@ public class ConditionalRouterTests
         Assert.Equal(0.0, result.Confidence);
     }
 
+    [Theory]
+    [InlineData("1e309")]
+    [InlineData("-1e309")]
+    public async Task ClassifyAsync_NonFiniteConfidence_FallsBackInsteadOfLeakingInfinity(string confidence)
+    {
+        var router = CreateRouter();
+        var result = await router.ClassifyAsync("anything",
+            (prompt, ct) => Task.FromResult(
+                $$"""{"route": "technical", "confidence": {{confidence}}, "reasoning": "overflow"}"""));
+
+        Assert.Equal("general", result.Route);
+        Assert.Equal(0.0, result.Confidence);
+    }
+
+    [Theory]
+    [InlineData(-0.2, 0.0)]
+    [InlineData(1.4, 1.0)]
+    public async Task ClassifyAsync_OutOfRangeConfidence_IsClampedToDocumentedRange(
+        double confidence, double expected)
+    {
+        var router = CreateRouter(minConfidence: 0.0);
+        var result = await router.ClassifyAsync("anything",
+            async (prompt, ct) => await MakeClassifier("technical", confidence, "out of range"));
+
+        Assert.Equal("technical", result.Route);
+        Assert.Equal(expected, result.Confidence);
+    }
+
     [Fact]
     public async Task ClassifyAsync_MissingReasoning_DefaultsToEmptyNotThrow()
     {
@@ -584,7 +612,8 @@ class PromptRouter
                 ? routeEl.GetString()!
                 : _options.FallbackRoute;
             var confidence = root.TryGetProperty("confidence", out var confEl) && confEl.ValueKind == JsonValueKind.Number
-                ? confEl.GetDouble()
+                && confEl.TryGetDouble(out var parsedConfidence) && double.IsFinite(parsedConfidence)
+                ? Math.Clamp(parsedConfidence, 0.0, 1.0)
                 : 0.0;
             var reasoning = root.TryGetProperty("reasoning", out var reasonEl) && reasonEl.ValueKind == JsonValueKind.String
                 ? reasonEl.GetString()!
