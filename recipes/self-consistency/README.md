@@ -76,8 +76,10 @@ floor is the right call when the question is a genuine judgement call.
 ### Conviction vs. headcount (weighted voting)
 
 By default every path casts one equal vote. Flip `WeightByConfidence = true` and
-each vote is scaled by that path's self-reported confidence — so five wishy-washy
-votes can lose to two emphatic ones. In the demo's Q3, a bare head-count would
+each vote is scaled by that path's self-reported confidence, clamped to `[0, 1]`;
+non-finite values (`NaN` or infinity) carry zero weight rather than poisoning the
+tally — so five wishy-washy votes can lose to two emphatic ones. In the demo's
+Q3, a bare head-count would
 crown `"B"` (3 vs 2), but the two `"A"` paths are near-certain while the `"B"`
 bloc is hedging, so weighting lets **conviction outvote raw count.**
 

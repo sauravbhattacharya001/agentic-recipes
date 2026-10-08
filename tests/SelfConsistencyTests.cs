@@ -214,6 +214,31 @@ public class SelfConsistencyTests
         Assert.Equal(1.0, r.Consensus, 3);
     }
 
+    [Fact]
+    public void WeightByConfidence_NonFiniteConfidence_HasZeroWeight()
+    {
+        // Model-produced numeric metadata can contain NaN or infinities. None is a
+        // meaningful probability, and allowing NaN into the totals poisons every
+        // comparison so a valid winner incorrectly abstains. Treat all non-finite
+        // values as zero-confidence while retaining the sample for transparency.
+        var samples = new[]
+        {
+            S("invalid-nan", double.NaN),
+            S("invalid-positive-infinity", double.PositiveInfinity),
+            S("invalid-negative-infinity", double.NegativeInfinity),
+            S("valid", 0.8),
+        };
+
+        var r = Vote(samples, new EnsembleOptions { WeightByConfidence = true });
+
+        Assert.Equal("valid", r.Answer);
+        Assert.Equal(EnsembleVerdict.Confident, r.Verdict);
+        Assert.Equal(0.8, r.TotalWeight, 12);
+        Assert.Equal(1.0, r.Consensus, 12);
+        Assert.All(r.Tally.Where(t => t.Answer.StartsWith("invalid", StringComparison.Ordinal)),
+            t => Assert.Equal(0.0, t.Votes));
+    }
+
     // ── Determinism / tie-breaking ─────────────────────────────
 
     [Fact]
@@ -411,7 +436,7 @@ class EnsembleVoter
         {
             var s = samples[i];
             var key = normalize(s.Answer ?? "");
-            var weight = _options.WeightByConfidence ? Math.Clamp(s.Confidence, 0.0, 1.0) : 1.0;
+            var weight = _options.WeightByConfidence ? ConfidenceWeight(s.Confidence) : 1.0;
 
             if (buckets.TryGetValue(key, out var b))
                 buckets[key] = (b.Display, b.Votes + weight, b.Count + 1, b.FirstIndex);
@@ -433,7 +458,7 @@ class EnsembleVoter
             .ToList();
 
         var totalWeight = _options.WeightByConfidence
-            ? samples.Sum(s => Math.Clamp(s.Confidence, 0.0, 1.0))
+            ? samples.Sum(s => ConfidenceWeight(s.Confidence))
             : samples.Count;
 
         var winner = ranked[0];
@@ -459,6 +484,9 @@ class EnsembleVoter
     }
 
     private static string DefaultNormalize(string answer) => answer.Trim().ToLowerInvariant();
+
+    private static double ConfidenceWeight(double confidence) =>
+        double.IsFinite(confidence) ? Math.Clamp(confidence, 0.0, 1.0) : 0.0;
 
     private static double Round(double v) => Math.Round(v, 4, MidpointRounding.AwayFromZero);
 }

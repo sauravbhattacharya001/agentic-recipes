@@ -241,7 +241,7 @@ class EnsembleVoter
         {
             var s = samples[i];
             var key = normalize(s.Answer ?? "");
-            var weight = _options.WeightByConfidence ? Math.Clamp(s.Confidence, 0.0, 1.0) : 1.0;
+            var weight = _options.WeightByConfidence ? ConfidenceWeight(s.Confidence) : 1.0;
 
             if (buckets.TryGetValue(key, out var b))
                 buckets[key] = (b.Display, b.Votes + weight, b.Count + 1, b.FirstIndex);
@@ -267,7 +267,7 @@ class EnsembleVoter
             .ToList();
 
         var totalWeight = _options.WeightByConfidence
-            ? samples.Sum(s => Math.Clamp(s.Confidence, 0.0, 1.0))
+            ? samples.Sum(s => ConfidenceWeight(s.Confidence))
             : samples.Count;
 
         var winner = ranked[0];
@@ -296,6 +296,9 @@ class EnsembleVoter
     }
 
     private static string DefaultNormalize(string answer) => answer.Trim().ToLowerInvariant();
+
+    private static double ConfidenceWeight(double confidence) =>
+        double.IsFinite(confidence) ? Math.Clamp(confidence, 0.0, 1.0) : 0.0;
 
     private static double Round(double v) => Math.Round(v, 4, MidpointRounding.AwayFromZero);
 }
