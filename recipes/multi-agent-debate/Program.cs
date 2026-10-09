@@ -313,7 +313,11 @@ class DebateOrchestrator
             {
                 var ctx = new DebateTurnContext(question, d.Name, round, transcript);
                 var argument = await d.Argue(ctx, ct);
-                var score = Math.Clamp(judge(question, argument, transcript), 0.0, 1.0);
+                var rawScore = judge(question, argument, transcript);
+                // A non-finite judge result must not poison every cumulative score,
+                // answer weight, margin, and ordering downstream. Treat it as no
+                // evidence, matching the finite lower bound of the documented range.
+                var score = double.IsFinite(rawScore) ? Math.Clamp(rawScore, 0.0, 1.0) : 0.0;
                 moves.Add(new DebateMove(d.Name, argument, score));
 
                 // 2) Accumulate judge weight toward the debater and its current answer.

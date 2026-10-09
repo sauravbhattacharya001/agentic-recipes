@@ -310,6 +310,31 @@ public class MultiAgentDebateTests
         Assert.Equal(0.0, standB.Score);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task NonFiniteJudgeScore_IsTreatedAsZero(double nonFiniteScore)
+    {
+        var invalid = Scripted("Invalid", new DebateArgument("invalid judge output", "x", 0.5));
+        var finite = Scripted("Finite", new DebateArgument("valid judge output", "y", 0.5));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 1,
+            DecisiveMargin = 2.0,
+        });
+        var result = await orch.RunAsync(
+            "q",
+            new[] { invalid, finite },
+            (_, argument, _) => argument.Answer == "x" ? nonFiniteScore : 0.5);
+
+        Assert.Equal(0.0, result.Standings.Single(s => s.Debater == "Invalid").Score);
+        Assert.Equal(0.5, result.Standings.Single(s => s.Debater == "Finite").Score);
+        Assert.Equal("y", result.Transcript[0].LeadingAnswer);
+        Assert.True(double.IsFinite(result.Margin));
+    }
+
     [Fact]
     public async Task Throws_WhenFewerThanTwoDebaters()
     {
@@ -561,7 +586,8 @@ class DebateOrchestrator
             {
                 var ctx = new DebateTurnContext(question, d.Name, round, transcript);
                 var argument = await d.Argue(ctx, ct);
-                var score = Math.Clamp(judge(question, argument, transcript), 0.0, 1.0);
+                var rawScore = judge(question, argument, transcript);
+                var score = double.IsFinite(rawScore) ? Math.Clamp(rawScore, 0.0, 1.0) : 0.0;
                 moves.Add(new DebateMove(d.Name, argument, score));
 
                 scoreByDebater[d.Name] += score;
