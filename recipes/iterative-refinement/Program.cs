@@ -264,7 +264,12 @@ class IterativeRefiner
 
             var draft = await generate(task, feedback.AsReadOnly(), iteration, ct);
             var verdict = await critique(task, draft, ct);
-            var score = Clamp(verdict.Score, 0, 100);
+            // Model-backed critics can emit NaN or infinities after a parse or
+            // calculation failure. Treat those as no evidence instead of letting
+            // NaN poison best-draft tracking and plateau detection.
+            var score = double.IsFinite(verdict.Score)
+                ? Clamp(verdict.Score, 0, 100)
+                : 0;
 
             var step = new RefinementStep(iteration, draft, score, verdict.Feedback, verdict.Issues);
             steps.Add(step);

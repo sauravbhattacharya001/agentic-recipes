@@ -219,6 +219,25 @@ public class IterativeRefinementTests
         Assert.Equal(0, result.BestScore);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task RefineAsync_NonFiniteScore_TreatsItAsZero(double score)
+    {
+        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 1000, MaxIterations = 1 });
+
+        var result = await refiner.RefineAsync(
+            "task",
+            generate: (t, fb, i) => "v",
+            critique: (t, draft) => new Critique(score, "invalid", new List<string>()));
+
+        Assert.Equal(0, result.Iterations[0].Score);
+        Assert.Equal(0, result.BestScore);
+        Assert.Equal(1, result.BestIteration);
+        Assert.Equal("v", result.BestDraft);
+    }
+
     [Fact]
     public async Task RefineAsync_MaxIterationsZero_RunsAtLeastOnce()
     {
@@ -393,7 +412,9 @@ class IterativeRefiner
 
             var draft = await generate(task, feedback.AsReadOnly(), iteration, ct);
             var verdict = await critique(task, draft, ct);
-            var score = Clamp(verdict.Score, 0, 100);
+            var score = double.IsFinite(verdict.Score)
+                ? Clamp(verdict.Score, 0, 100)
+                : 0;
 
             var step = new RefinementStep(iteration, draft, score, verdict.Feedback, verdict.Issues);
             steps.Add(step);
