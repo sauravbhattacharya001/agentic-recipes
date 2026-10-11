@@ -124,10 +124,9 @@ public class GuardrailedPipelineTests
 
     [Theory]
     [InlineData("4111111111111")]   // 13 contiguous digits
-    [InlineData("4111 1111 1111 1111")] // 16, space-separated
-    [InlineData("4111-1111-1111-1111")] // 16, dash-separated
-    [InlineData("4111-1111 1111-1111")] // 16, mixed dash/space separators
-    [InlineData("4111 1111-1111 1111")] // 16, mixed space/dash separators
+    [InlineData("4111 1111 1111 1111")] // 16, space-separated groups of four
+    [InlineData("4111-1111-1111-1111")] // 16, dash-separated groups of four
+    [InlineData("4111 1111 1111 1")]    // 13, grouped with a short final group
     public void CreditCard_ValidLengths_AreDetected(string card)
     {
         var guard = Create();
@@ -190,6 +189,17 @@ public class GuardrailedPipelineTests
 
         Assert.DoesNotContain("[REDACTED_PHONE]", v.SafeText);
         Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
+    }
+
+    [Theory]
+    [InlineData("reference 12-3456-7890-1234 complete")] // irregular grouping with phone-shaped suffix
+    [InlineData("reference 4111-1111 1111-1111 complete")] // mixed separators
+    public void CreditCard_IrregularGroupedReferences_AreNotDetected(string input)
+    {
+        var guard = Create();
+        var v = guard.Evaluate(input);
+
+        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("credit_card"));
     }
 
     [Fact]
@@ -398,20 +408,16 @@ public class GuardrailedPipelineTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void CardShapedRun_DoesNotSpawnPhantomPhoneFinding_RegardlessOfRedaction(bool redact)
+    public void IrregularNumericReference_IsNotPromotedToCreditCard_RegardlessOfRedaction(bool redact)
     {
-        // "100-200-300-4000" is a 13-digit run that the credit_card detector claims
-        // in full, but a 10-digit substring ("200-300-4000") also matches the phone
-        // shape. Detection must be deterministic: the higher-severity card match
-        // claims the span so phone never re-reports the SAME digits - and that must
-        // hold whether or not redaction (remediation) happens to be enabled. Before
-        // the fix, findings were computed on the progressively-redacted text, so a
-        // phantom "phone" finding appeared ONLY when RedactPii was off.
+        // "100-200-300-4000" is an irregular 13-digit reference containing a
+        // phone-shaped suffix. It must not be promoted to a high-severity card
+        // finding; the narrower phone detector may still identify that suffix.
         var guard = new GuardrailPipeline(new GuardrailOptions { RedactPii = redact });
         var v = guard.Evaluate("wire to account 100-200-300-4000 today");
 
-        Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("credit_card"));
-        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
+        Assert.DoesNotContain(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("credit_card"));
+        Assert.Contains(v.Findings, f => f.Guardrail == "pii" && f.Message.Contains("phone"));
     }
 }
 
@@ -460,7 +466,7 @@ class GuardrailPipeline
     {
         ("email",   new Regex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.Compiled), "[REDACTED_EMAIL]"),
         ("api_key", new Regex(@"\bsk-[A-Za-z0-9]{16,}\b", RegexOptions.Compiled), "[REDACTED_API_KEY]"),
-        ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
+        ("credit_card", new Regex(@"(?<![\d-])(?:\d{13,16}|\d{4}([ -])\d{4}\1\d{4}(?:\1\d{1,4})?)(?!\d)(?![ -]\d)", RegexOptions.Compiled), "[REDACTED_CARD]"),
         ("phone",   new Regex(@"(?:\(\d{3}\) ?\d{3}[ .-]?\d{4}|\b\d{3}[ .-]\d{3}[ .-]\d{4}\b)", RegexOptions.Compiled), "[REDACTED_PHONE]"),
     };
 

@@ -191,10 +191,10 @@ class GuardrailPipeline
     {
         ("email",   new Regex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.Compiled), "[REDACTED_EMAIL]"),
         ("api_key", new Regex(@"\bsk-[A-Za-z0-9]{16,}\b", RegexOptions.Compiled), "[REDACTED_API_KEY]"),
-        // 13-16 digits, optional single space/dash BETWEEN digits only — the
-        // trailing boundary must be a digit so redaction never eats the following
-        // space (which previously glued the next word onto the mask).
-        ("credit_card", new Regex(@"\b\d(?:[ -]?\d){12,15}\b", RegexOptions.Compiled), "[REDACTED_CARD]"),
+        // 13-16 digits, with either no separators or consistent groups of four.
+        // Restricting separated values to card-shaped groups avoids treating long,
+        // arbitrary numeric references such as "12-3456-7890-1234" as cards.
+        ("credit_card", new Regex(@"(?<![\d-])(?:\d{13,16}|\d{4}([ -])\d{4}\1\d{4}(?:\1\d{1,4})?)(?!\d)(?![ -]\d)", RegexOptions.Compiled), "[REDACTED_CARD]"),
         // North-American phone numbers in their common written shapes:
         //   555-123-4567  555 123 4567  555.123.4567  (555) 123-4567  (555)123-4567
         // The separator class is [ .-] (space/dot/dash); the parenthesized-area-code
@@ -253,9 +253,6 @@ class GuardrailPipeline
             var matches = pattern.Matches(claimed);
             if (matches.Count == 0) continue;
 
-            // The credit_card pattern already requires 13–16 digits (one digit
-            // plus 12–15 more), so every match here is a real hit — no extra
-            // per-match length filtering is needed.
             pii = true;
             var sev = label is "api_key" or "credit_card" ? Severity.High : Severity.Medium;
             Report(new Finding("pii", sev, $"{matches.Count}× {label}"));
