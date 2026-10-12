@@ -74,6 +74,18 @@ public class PlanAndExecuteTests
     }
 
     [Fact]
+    public void Plan_DuplicateDependency_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Plan("g", new[]
+        {
+            new PlanStep("source", ""),
+            new PlanStep("sink", "", dependsOn: new[] { "source", "source" }),
+        }));
+
+        Assert.Contains("duplicate dependency 'source'", ex.Message);
+    }
+
+    [Fact]
     public void ExecutionOrder_Cycle_Throws()
     {
         var plan = new Plan("g", new[]
@@ -553,9 +565,16 @@ class Plan
         }
 
         foreach (var s in Steps)
+        {
+            var seenDependencies = new HashSet<string>(StringComparer.Ordinal);
             foreach (var dep in s.DependsOn)
+            {
                 if (!_byId.ContainsKey(dep))
                     throw new ArgumentException($"Step '{s.Id}' depends on unknown step '{dep}'.", nameof(steps));
+                if (!seenDependencies.Add(dep))
+                    throw new ArgumentException($"Step '{s.Id}' declares duplicate dependency '{dep}'.", nameof(steps));
+            }
+        }
     }
 
     public PlanStep this[string id] => _byId[id];

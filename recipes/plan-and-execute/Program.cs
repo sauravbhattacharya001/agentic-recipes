@@ -245,11 +245,19 @@ class Plan
             _byId[s.Id] = s;
         }
 
-        // Every declared dependency must reference a real step.
+        // Every declared dependency must reference a real step, and listing the
+        // same input twice is malformed rather than two independent prerequisites.
         foreach (var s in Steps)
+        {
+            var seenDependencies = new HashSet<string>(StringComparer.Ordinal);
             foreach (var dep in s.DependsOn)
+            {
                 if (!_byId.ContainsKey(dep))
                     throw new ArgumentException($"Step '{s.Id}' depends on unknown step '{dep}'.", nameof(steps));
+                if (!seenDependencies.Add(dep))
+                    throw new ArgumentException($"Step '{s.Id}' declares duplicate dependency '{dep}'.", nameof(steps));
+            }
+        }
     }
 
     /// <summary>Look up a step by id.</summary>
