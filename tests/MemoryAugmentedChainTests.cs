@@ -36,6 +36,34 @@ public class MemoryAugmentedChainTests
         Assert.Empty(agent.Retrieve("anything at all"));
     }
 
+    [Theory]
+    [InlineData(double.NaN, 0.6, 0.1)]
+    [InlineData(0.05, double.NaN, 0.1)]
+    [InlineData(0.05, 0.6, -0.1)]
+    public void Constructor_RejectsInvalidBoundedOptions(double minRelevance, double duplicateThreshold, double decay)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemoryAugmentedAgent(new MemoryOptions
+        {
+            MinRelevanceToRecall = minRelevance,
+            DuplicateThreshold = duplicateThreshold,
+            DecayPerTurn = decay,
+        }));
+    }
+
+    [Theory]
+    [InlineData(double.NegativeInfinity, 0.3, 0.25)]
+    [InlineData(1.0, double.NaN, 0.25)]
+    [InlineData(1.0, 0.3, -0.25)]
+    public void Constructor_RejectsInvalidRankingWeights(double relevance, double recency, double salience)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MemoryAugmentedAgent(new MemoryOptions
+        {
+            RelevanceWeight = relevance,
+            RecencyWeight = recency,
+            SalienceWeight = salience,
+        }));
+    }
+
     [Fact]
     public async Task Chat_StoresNewFact()
     {
@@ -468,7 +496,21 @@ class MemoryAugmentedAgent
 
     public IReadOnlyList<MemoryItem> Memory => _memory.AsReadOnly();
 
-    public MemoryAugmentedAgent(MemoryOptions options) => Options = options;
+    public MemoryAugmentedAgent(MemoryOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!double.IsFinite(options.MinRelevanceToRecall) || options.MinRelevanceToRecall < 0 || options.MinRelevanceToRecall > 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "Minimum recall relevance must be finite and between 0 and 1.");
+        if (!double.IsFinite(options.DuplicateThreshold) || options.DuplicateThreshold < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Duplicate threshold must be finite and non-negative.");
+        if (!double.IsFinite(options.DecayPerTurn) || options.DecayPerTurn < 0 || options.DecayPerTurn > 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "Decay per turn must be finite and between 0 and 1.");
+        if (!double.IsFinite(options.RelevanceWeight) || options.RelevanceWeight < 0 ||
+            !double.IsFinite(options.RecencyWeight) || options.RecencyWeight < 0 ||
+            !double.IsFinite(options.SalienceWeight) || options.SalienceWeight < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Ranking weights must be finite and non-negative.");
+        Options = options;
+    }
 
     public Task<MemoryTurn> ChatAsync(
         string userInput,

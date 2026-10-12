@@ -210,7 +210,21 @@ class MemoryAugmentedAgent
     /// <summary>The current memory snapshot (read-only view).</summary>
     public IReadOnlyList<MemoryItem> Memory => _memory.AsReadOnly();
 
-    public MemoryAugmentedAgent(MemoryOptions options) => Options = options;
+    public MemoryAugmentedAgent(MemoryOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!double.IsFinite(options.MinRelevanceToRecall) || options.MinRelevanceToRecall < 0 || options.MinRelevanceToRecall > 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "Minimum recall relevance must be finite and between 0 and 1.");
+        if (!double.IsFinite(options.DuplicateThreshold) || options.DuplicateThreshold < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Duplicate threshold must be finite and non-negative.");
+        if (!double.IsFinite(options.DecayPerTurn) || options.DecayPerTurn < 0 || options.DecayPerTurn > 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "Decay per turn must be finite and between 0 and 1.");
+        if (!double.IsFinite(options.RelevanceWeight) || options.RelevanceWeight < 0 ||
+            !double.IsFinite(options.RecencyWeight) || options.RecencyWeight < 0 ||
+            !double.IsFinite(options.SalienceWeight) || options.SalienceWeight < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "Ranking weights must be finite and non-negative.");
+        Options = options;
+    }
 
     /// <summary>Run one conversational turn with a synchronous responder.</summary>
     public Task<MemoryTurn> ChatAsync(
