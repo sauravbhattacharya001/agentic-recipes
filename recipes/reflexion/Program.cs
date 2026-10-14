@@ -311,7 +311,12 @@ class ReflexionAgent
 
             var action = await actor(task, reflections.AsReadOnly(), trialNum, ct);
             var evaluation = await evaluate(task, action, ct);
-            var reward = Clamp(evaluation.Reward, 0, 1);
+            // Model-backed evaluators can emit NaN or infinities after a parse or
+            // arithmetic failure. Treat those as the minimum reward: Clamp alone
+            // does not contain NaN, which would otherwise poison best-trial tracking.
+            var reward = double.IsFinite(evaluation.Reward)
+                ? Clamp(evaluation.Reward, 0, 1)
+                : 0;
             var solved = evaluation.Succeeded || reward >= _options.RewardThreshold;
 
             // Reflect on failure (success needs no lesson).

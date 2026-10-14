@@ -247,6 +247,26 @@ public class ReflexionTests
         Assert.Equal(0.0, result.BestReward);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task SolveAsync_NonFiniteReward_IsContainedAsZero(double reward)
+    {
+        var agent = new ReflexionAgent(new ReflexionOptions { MaxTrials = 1, RewardThreshold = 5.0 });
+
+        var result = await agent.SolveAsync(
+            "task",
+            actor: (t, lessons, i) => "v",
+            evaluate: (t, a) => new ReflexionEvaluation(reward, false, "invalid", new List<string> { "x" }),
+            reflect: RubricReflector);
+
+        Assert.Equal(0.0, result.Trials[0].Reward);
+        Assert.Equal(0.0, result.BestReward);
+        Assert.Equal(1, result.BestTrial);
+        Assert.Equal("v", result.BestAction);
+    }
+
     [Fact]
     public async Task SolveAsync_MaxTrialsZero_RunsAtLeastOnce()
     {
@@ -598,7 +618,9 @@ class ReflexionAgent
 
             var action = await actor(task, reflections.AsReadOnly(), trialNum, ct);
             var evaluation = await evaluate(task, action, ct);
-            var reward = Clamp(evaluation.Reward, 0, 1);
+            var reward = double.IsFinite(evaluation.Reward)
+                ? Clamp(evaluation.Reward, 0, 1)
+                : 0;
             var solved = evaluation.Succeeded || reward >= _options.RewardThreshold;
 
             string? lesson = null;
