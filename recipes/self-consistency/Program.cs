@@ -198,7 +198,14 @@ class EnsembleVoter
 {
     private readonly EnsembleOptions _options;
 
-    public EnsembleVoter(EnsembleOptions? options = null) => _options = options ?? new EnsembleOptions();
+    public EnsembleVoter(EnsembleOptions? options = null)
+    {
+        _options = options ?? new EnsembleOptions();
+        ValidateThreshold(_options.ConfidentConsensus, nameof(EnsembleOptions.ConfidentConsensus));
+        ValidateThreshold(_options.MinConsensus, nameof(EnsembleOptions.MinConsensus));
+        if (_options.MinConsensus > _options.ConfidentConsensus)
+            throw new ArgumentException("MinConsensus cannot exceed ConfidentConsensus.", nameof(options));
+    }
 
     /// <summary>
     /// Draw <paramref name="samples"/> independent samples via <paramref name="sampler"/>
@@ -293,6 +300,12 @@ class EnsembleVoter
             TotalWeight: totalWeight,
             Tally: tally,
             Samples: samples);
+    }
+
+    private static void ValidateThreshold(double value, string name)
+    {
+        if (!double.IsFinite(value) || value < 0.0 || value > 1.0)
+            throw new ArgumentOutOfRangeException(name, value, "Consensus thresholds must be finite values in [0, 1].");
     }
 
     private static string DefaultNormalize(string answer) => answer.Trim().ToLowerInvariant();

@@ -78,6 +78,29 @@ public class SelfConsistencyTests
         Assert.Equal(1.0, r.Consensus, 3);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(-0.01)]
+    [InlineData(1.01)]
+    public void Constructor_RejectsInvalidConsensusThresholds(double invalid)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new EnsembleVoter(new EnsembleOptions { ConfidentConsensus = invalid }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new EnsembleVoter(new EnsembleOptions { MinConsensus = invalid }));
+    }
+
+    [Fact]
+    public void Constructor_RejectsMinConsensusAboveConfidentConsensus()
+    {
+        Assert.Throws<ArgumentException>(() => new EnsembleVoter(new EnsembleOptions
+        {
+            MinConsensus = 0.8,
+            ConfidentConsensus = 0.6,
+        }));
+    }
+
     // ── Threshold boundaries ───────────────────────────────────
 
     [Fact]
@@ -400,7 +423,14 @@ class EnsembleVoter
 {
     private readonly EnsembleOptions _options;
 
-    public EnsembleVoter(EnsembleOptions? options = null) => _options = options ?? new EnsembleOptions();
+    public EnsembleVoter(EnsembleOptions? options = null)
+    {
+        _options = options ?? new EnsembleOptions();
+        ValidateThreshold(_options.ConfidentConsensus, nameof(EnsembleOptions.ConfidentConsensus));
+        ValidateThreshold(_options.MinConsensus, nameof(EnsembleOptions.MinConsensus));
+        if (_options.MinConsensus > _options.ConfidentConsensus)
+            throw new ArgumentException("MinConsensus cannot exceed ConfidentConsensus.", nameof(options));
+    }
 
     public async Task<EnsembleResult> RunAsync(
         int samples,
@@ -481,6 +511,12 @@ class EnsembleVoter
             TotalWeight: totalWeight,
             Tally: tally,
             Samples: samples);
+    }
+
+    private static void ValidateThreshold(double value, string name)
+    {
+        if (!double.IsFinite(value) || value < 0.0 || value > 1.0)
+            throw new ArgumentOutOfRangeException(name, value, "Consensus thresholds must be finite values in [0, 1].");
     }
 
     private static string DefaultNormalize(string answer) => answer.Trim().ToLowerInvariant();
