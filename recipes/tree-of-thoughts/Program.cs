@@ -371,9 +371,10 @@ class TreeOfThoughtsAgent
 
         // Score the root so the search has a seed and a baseline best.
         var rootEval = await evaluate(rootThought, 0, ct);
-        var rootSolved = rootEval.Solved || rootEval.Score >= _options.SolvedThreshold;
+        var rootScore = Clamp(rootEval.Score);
+        var rootSolved = rootEval.Solved || rootScore >= _options.SolvedThreshold;
         var root = new SearchNode(nextId++, 0, 0, "(root)", rootThought,
-            Clamp(rootEval.Score), rootSolved);
+            rootScore, rootSolved);
         explored.Add(root);
         _options.OnNode?.Invoke(root);
 
@@ -561,5 +562,6 @@ class TreeOfThoughtsAgent
             Explored: explored);
     }
 
-    private static double Clamp(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
+    private static double Clamp(double v) =>
+        double.IsFinite(v) ? Math.Clamp(v, 0.0, 1.0) : 0.0;
 }

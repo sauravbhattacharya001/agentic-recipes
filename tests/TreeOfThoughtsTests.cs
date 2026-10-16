@@ -526,6 +526,39 @@ public class TreeOfThoughtsTests
         Assert.All(result.Explored, n => Assert.InRange(n.Score, 0.0, 1.0));
     }
 
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("PositiveInfinity")]
+    [InlineData("NegativeInfinity")]
+    public async Task SearchAsync_NonFiniteScores_AreContainedAsZero(string scoreName)
+    {
+        var nonFiniteScore = scoreName switch
+        {
+            "NaN" => double.NaN,
+            "PositiveInfinity" => double.PositiveInfinity,
+            _ => double.NegativeInfinity,
+        };
+        Assert.False(double.IsFinite(nonFiniteScore));
+
+        var agent = new TreeOfThoughtsAgent(new TreeOfThoughtsOptions
+        {
+            BeamWidth = 2,
+            MaxDepth = 1,
+            MaxExpansions = 10,
+            SolvedThreshold = 2.0,
+        });
+        var result = await agent.SearchAsync(
+            "",
+            (state, depth) => depth == 0
+                ? new[] { new ThoughtExpansion("invalid", "invalid") }
+                : Array.Empty<ThoughtExpansion>(),
+            evaluate: (state, depth) => new ThoughtEvaluation(nonFiniteScore, false, "invalid"));
+
+        Assert.False(result.Solved);
+        Assert.Equal(ToTOutcome.DepthLimited, result.Outcome);
+        Assert.All(result.Explored, node => Assert.Equal(0.0, node.Score));
+    }
+
     [Fact]
     public async Task SearchAsync_ScoreAtOrAboveSolvedThreshold_CountsAsSolved()
     {
@@ -849,9 +882,10 @@ class TreeOfThoughtsAgent
         var nextId = 1;
 
         var rootEval = await evaluate(rootThought, 0, ct);
-        var rootSolved = rootEval.Solved || rootEval.Score >= _options.SolvedThreshold;
+        var rootScore = Clamp(rootEval.Score);
+        var rootSolved = rootEval.Solved || rootScore >= _options.SolvedThreshold;
         var root = new SearchNode(nextId++, 0, 0, "(root)", rootThought,
-            Clamp(rootEval.Score), rootSolved);
+            rootScore, rootSolved);
         explored.Add(root);
         _options.OnNode?.Invoke(root);
 
@@ -998,5 +1032,6 @@ class TreeOfThoughtsAgent
             Explored: explored);
     }
 
-    private static double Clamp(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
+    private static double Clamp(double v) =>
+        double.IsFinite(v) ? Math.Clamp(v, 0.0, 1.0) : 0.0;
 }
