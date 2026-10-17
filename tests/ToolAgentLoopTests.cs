@@ -1,4 +1,5 @@
 using Prompt;
+using System.Globalization;
 using System.Text.Json;
 using Xunit;
 
@@ -13,7 +14,7 @@ public class ToolAgentLoopTests
             {
                 var args = JsonDocument.Parse(argsJson).RootElement;
                 var city = args.GetProperty("city").GetString()!;
-                return Task.FromResult(city.ToLower() switch
+                return Task.FromResult(city.ToLowerInvariant() switch
                 {
                     "seattle" => "{\"temp\":62,\"condition\":\"cloudy\"}",
                     "phoenix" => "{\"temp\":105,\"condition\":\"sunny\"}",
@@ -38,6 +39,28 @@ public class ToolAgentLoopTests
                 });
             })
             .AddParameter("expression", "string", "Math expression", required: true);
+    }
+
+    [Fact]
+    public async Task WeatherTool_RoutesAsciiCityNamesIndependentlyOfCurrentCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            var turkish = CultureInfo.GetCultureInfo("tr-TR");
+            CultureInfo.CurrentCulture = turkish;
+            CultureInfo.CurrentUICulture = turkish;
+
+            var output = await CreateWeatherTool().Execute("{\"city\":\"MIAMI\"}", CancellationToken.None);
+
+            Assert.Contains("\"temp\":70", output);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [Fact]

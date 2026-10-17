@@ -19,7 +19,7 @@ var weatherTool = new AgentTool(
         var args = JsonDocument.Parse(argsJson).RootElement;
         var city = args.GetProperty("city").GetString()!;
         // Simulated weather API
-        var data = city.ToLower() switch
+        var data = city.ToLowerInvariant() switch
         {
             "seattle" => new { temp = 62, condition = "cloudy", humidity = 78 },
             "phoenix" => new { temp = 105, condition = "sunny", humidity = 12 },
@@ -57,7 +57,7 @@ var searchTool = new AgentTool(
         var args = JsonDocument.Parse(argsJson).RootElement;
         var query = args.GetProperty("query").GetString()!;
         // Simulated search
-        return Task.FromResult(query.ToLower() switch
+        return Task.FromResult(query.ToLowerInvariant() switch
         {
             var q when q.Contains("population") && q.Contains("seattle") =>
                 "Seattle population: approximately 750,000 (city), 4 million (metro area)",
