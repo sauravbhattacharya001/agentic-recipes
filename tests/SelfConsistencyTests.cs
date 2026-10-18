@@ -163,6 +163,20 @@ public class SelfConsistencyTests
         Assert.Equal(2, r.Tally.Count); // yes + no
     }
 
+    [Fact]
+    public void CustomNormalizer_ReturningNull_ThrowsClearError()
+    {
+        var opts = new EnsembleOptions
+        {
+            NormalizeAnswer = _ => null!
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Vote(new[] { S("answer") }, opts));
+
+        Assert.Contains("NormalizeAnswer", ex.Message);
+        Assert.Contains("null", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Confidence weighting ───────────────────────────────────
 
     [Fact]
@@ -465,7 +479,8 @@ class EnsembleVoter
         for (var i = 0; i < samples.Count; i++)
         {
             var s = samples[i];
-            var key = normalize(s.Answer ?? "");
+            var key = normalize(s.Answer ?? "")
+                ?? throw new InvalidOperationException("NormalizeAnswer must not return null.");
             var weight = _options.WeightByConfidence ? ConfidenceWeight(s.Confidence) : 1.0;
 
             if (buckets.TryGetValue(key, out var b))
