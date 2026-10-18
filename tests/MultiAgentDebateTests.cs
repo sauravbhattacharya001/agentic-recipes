@@ -356,6 +356,34 @@ public class MultiAgentDebateTests
                 .RunAsync("q", new[] { a, b }, ConfidenceJudge));
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(-0.01)]
+    public async Task Throws_WhenDecisiveMarginIsInvalid(double decisiveMargin)
+    {
+        var a = Scripted("A", new DebateArgument("a", "a", 0.5));
+        var b = Scripted("B", new DebateArgument("b", "b", 0.5));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => new DebateOrchestrator(new DebateOptions { DecisiveMargin = decisiveMargin })
+                .RunAsync("q", new[] { a, b }, ConfidenceJudge));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Throws_WhenStableLeadRoundsIsNotPositive(int stableLeadRounds)
+    {
+        var a = Scripted("A", new DebateArgument("a", "a", 0.5));
+        var b = Scripted("B", new DebateArgument("b", "b", 0.5));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => new DebateOrchestrator(new DebateOptions { StableLeadRounds = stableLeadRounds })
+                .RunAsync("q", new[] { a, b }, ConfidenceJudge));
+    }
+
     [Fact]
     public async Task Cancellation_IsHonored()
     {
@@ -565,6 +593,10 @@ class DebateOrchestrator
         ArgumentNullException.ThrowIfNull(judge);
         if (debaters.Count < 2) throw new ArgumentException("A debate needs at least two debaters.", nameof(debaters));
         if (_options.MaxRounds <= 0) throw new ArgumentOutOfRangeException(nameof(_options), "Need at least one round.");
+        if (!double.IsFinite(_options.DecisiveMargin) || _options.DecisiveMargin < 0.0)
+            throw new ArgumentOutOfRangeException(nameof(_options), "Decisive margin must be finite and non-negative.");
+        if (_options.StableLeadRounds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(_options), "Stable lead rounds must be positive.");
 
         var normalize = _options.NormalizeAnswer ?? DefaultNormalize;
         var transcript = new List<DebateExchange>();

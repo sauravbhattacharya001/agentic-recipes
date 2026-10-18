@@ -290,6 +290,10 @@ class DebateOrchestrator
         ArgumentNullException.ThrowIfNull(judge);
         if (debaters.Count < 2) throw new ArgumentException("A debate needs at least two debaters.", nameof(debaters));
         if (_options.MaxRounds <= 0) throw new ArgumentOutOfRangeException(nameof(_options), "Need at least one round.");
+        if (!double.IsFinite(_options.DecisiveMargin) || _options.DecisiveMargin < 0.0)
+            throw new ArgumentOutOfRangeException(nameof(_options), "Decisive margin must be finite and non-negative.");
+        if (_options.StableLeadRounds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(_options), "Stable lead rounds must be positive.");
 
         var normalize = _options.NormalizeAnswer ?? DefaultNormalize;
         var transcript = new List<DebateExchange>();
