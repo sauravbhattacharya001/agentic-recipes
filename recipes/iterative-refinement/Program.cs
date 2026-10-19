@@ -214,7 +214,20 @@ class IterativeRefiner
 {
     private readonly RefinerOptions _options;
 
-    public IterativeRefiner(RefinerOptions options) => _options = options;
+    public IterativeRefiner(RefinerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!double.IsFinite(options.TargetScore) || options.TargetScore is < 0 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(options), "TargetScore must be finite and between 0 and 100.");
+        if (options.MaxIterations < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "MaxIterations must be at least 1.");
+        if (!double.IsFinite(options.MinImprovement) || options.MinImprovement < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "MinImprovement must be finite and non-negative.");
+        if (options.PlateauPatience < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "PlateauPatience must be at least 1.");
+
+        _options = options;
+    }
 
     /// <summary>
     /// Refine a task to the best draft the critic will accept (or the best
@@ -247,7 +260,6 @@ class IterativeRefiner
         Func<string, string, CancellationToken, Task<Critique>> critique,
         CancellationToken ct = default)
     {
-        var maxIterations = Math.Max(1, _options.MaxIterations);
         var steps = new List<RefinementStep>();
         var feedback = new List<string>();
 
@@ -258,7 +270,7 @@ class IterativeRefiner
         int staleRounds = 0;
         var stopReason = StopReason.BudgetExhausted;
 
-        for (var iteration = 1; iteration <= maxIterations; iteration++)
+        for (var iteration = 1; iteration <= _options.MaxIterations; iteration++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -295,7 +307,7 @@ class IterativeRefiner
             if (iteration > 1 && score - previousScore < _options.MinImprovement)
             {
                 staleRounds++;
-                if (staleRounds >= Math.Max(1, _options.PlateauPatience))
+                if (staleRounds >= _options.PlateauPatience)
                 {
                     stopReason = StopReason.Plateaued;
                     break;

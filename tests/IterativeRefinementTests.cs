@@ -104,7 +104,7 @@ public class IterativeRefinementTests
         var scores = new Queue<double>(new double[] { 10, 20, 22, 40, 42, 44 });
         var refiner = new IterativeRefiner(new RefinerOptions
         {
-            TargetScore = 1000,   // unreachable so only the plateau logic can stop it
+            TargetScore = 100,   // unreachable so only the plateau logic can stop it
             MaxIterations = 10,   // higher than the 6 scores so the budget never ends it
             MinImprovement = 5.0,
             PlateauPatience = 2
@@ -128,9 +128,9 @@ public class IterativeRefinementTests
         var scores = new Queue<double>(new double[] { 50, 90, 30 });
         var refiner = new IterativeRefiner(new RefinerOptions
         {
-            TargetScore = 200,        // unreachable so all rounds run
+            TargetScore = 100,
             MaxIterations = 3,
-            MinImprovement = -1000,   // never treat anything as a plateau
+            MinImprovement = 0,
             PlateauPatience = 99
         });
 
@@ -151,9 +151,9 @@ public class IterativeRefinementTests
         var feedbackSizes = new List<int>();
         var refiner = new IterativeRefiner(new RefinerOptions
         {
-            TargetScore = 1000,
+            TargetScore = 100,
             MaxIterations = 3,
-            MinImprovement = -1000,
+            MinImprovement = 0,
             PlateauPatience = 99
         });
 
@@ -176,9 +176,9 @@ public class IterativeRefinementTests
         var observed = new List<int>();
         var refiner = new IterativeRefiner(new RefinerOptions
         {
-            TargetScore = 1000,
+            TargetScore = 100,
             MaxIterations = 4,
-            MinImprovement = -1000,
+            MinImprovement = 0,
             PlateauPatience = 99,
             OnIteration = step => observed.Add(step.Iteration)
         });
@@ -194,7 +194,7 @@ public class IterativeRefinementTests
     [Fact]
     public async Task RefineAsync_ClampsScores_IntoZeroHundredRange()
     {
-        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 1000, MaxIterations = 1 });
+        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 100, MaxIterations = 1 });
 
         var result = await refiner.RefineAsync(
             "task",
@@ -208,7 +208,7 @@ public class IterativeRefinementTests
     [Fact]
     public async Task RefineAsync_NegativeScore_ClampsToZero()
     {
-        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 1000, MaxIterations = 1 });
+        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 100, MaxIterations = 1 });
 
         var result = await refiner.RefineAsync(
             "task",
@@ -225,7 +225,7 @@ public class IterativeRefinementTests
     [InlineData(double.NegativeInfinity)]
     public async Task RefineAsync_NonFiniteScore_TreatsItAsZero(double score)
     {
-        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 1000, MaxIterations = 1 });
+        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 100, MaxIterations = 1 });
 
         var result = await refiner.RefineAsync(
             "task",
@@ -239,18 +239,23 @@ public class IterativeRefinementTests
     }
 
     [Fact]
-    public async Task RefineAsync_MaxIterationsZero_RunsAtLeastOnce()
+    public void Constructor_InvalidOptions_ThrowBeforeExecution()
     {
-        var refiner = new IterativeRefiner(new RefinerOptions { TargetScore = 1000, MaxIterations = 0 });
+        Assert.Throws<ArgumentNullException>(() => new IterativeRefiner(null!));
 
-        var result = await refiner.RefineAsync(
-            "task",
-            generate: (t, fb, i) => "only",
-            critique: (t, draft) => new Critique(10, "fb", new List<string>()));
+        foreach (var target in new[] { -1d, 101d, double.NaN, double.PositiveInfinity })
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new IterativeRefiner(new RefinerOptions { TargetScore = target }));
 
-        Assert.Single(result.Iterations);
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new IterativeRefiner(new RefinerOptions { MaxIterations = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new IterativeRefiner(new RefinerOptions { MinImprovement = -1 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new IterativeRefiner(new RefinerOptions { MinImprovement = double.NaN }));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new IterativeRefiner(new RefinerOptions { PlateauPatience = 0 }));
     }
-
     [Fact]
     public async Task RefineAsync_TargetHitOnFirstRound_StopsImmediately()
     {
@@ -280,9 +285,9 @@ public class IterativeRefinementTests
         string? secondRoundFeedback = null;
         var refiner = new IterativeRefiner(new RefinerOptions
         {
-            TargetScore = 1000,
+            TargetScore = 100,
             MaxIterations = 2,
-            MinImprovement = -1000,
+            MinImprovement = 0,
             PlateauPatience = 99
         });
 
@@ -374,7 +379,20 @@ class IterativeRefiner
 {
     private readonly RefinerOptions _options;
 
-    public IterativeRefiner(RefinerOptions options) => _options = options;
+    public IterativeRefiner(RefinerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!double.IsFinite(options.TargetScore) || options.TargetScore is < 0 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(options), "TargetScore must be finite and between 0 and 100.");
+        if (options.MaxIterations < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "MaxIterations must be at least 1.");
+        if (!double.IsFinite(options.MinImprovement) || options.MinImprovement < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), "MinImprovement must be finite and non-negative.");
+        if (options.PlateauPatience < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "PlateauPatience must be at least 1.");
+
+        _options = options;
+    }
 
     public async Task<RefinementResult> RefineAsync(
         string task,
@@ -395,7 +413,6 @@ class IterativeRefiner
         Func<string, string, CancellationToken, Task<Critique>> critique,
         CancellationToken ct = default)
     {
-        var maxIterations = Math.Max(1, _options.MaxIterations);
         var steps = new List<RefinementStep>();
         var feedback = new List<string>();
 
@@ -406,7 +423,7 @@ class IterativeRefiner
         int staleRounds = 0;
         var stopReason = StopReason.BudgetExhausted;
 
-        for (var iteration = 1; iteration <= maxIterations; iteration++)
+        for (var iteration = 1; iteration <= _options.MaxIterations; iteration++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -436,7 +453,7 @@ class IterativeRefiner
             if (iteration > 1 && score - previousScore < _options.MinImprovement)
             {
                 staleRounds++;
-                if (staleRounds >= Math.Max(1, _options.PlateauPatience))
+                if (staleRounds >= _options.PlateauPatience)
                 {
                     stopReason = StopReason.Plateaued;
                     break;
