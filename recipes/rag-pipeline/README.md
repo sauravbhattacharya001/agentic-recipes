@@ -66,7 +66,7 @@ isn't in the corpus.
 | `ChunkSize` | `24` | Target tokens per chunk |
 | `ChunkOverlap` | `6` | Tokens shared between adjacent chunks (clamped to `[0, ChunkSize-1]`) |
 | `TopK` | `3` | Max chunks retrieved and carried into the prompt |
-| `MinRelevance` | `0.08` | Cosine floor; below it the pipeline abstains |
+| `MinRelevance` | `0.08` | Cosine floor; below it the pipeline abstains. Must be finite — `NaN`/±∞ are rejected at construction |
 
 ## Run it
 

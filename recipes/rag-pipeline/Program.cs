@@ -159,7 +159,7 @@ record RagOptions
     public int ChunkOverlap { get; init; } = 6;
     /// <summary>Maximum chunks retrieved and carried into the prompt. At least 0.</summary>
     public int TopK { get; init; } = 3;
-    /// <summary>Cosine similarity at/above which a chunk is considered relevant; below it the pipeline abstains.</summary>
+    /// <summary>Cosine similarity at/above which a chunk is considered relevant; below it the pipeline abstains. Must be a finite number.</summary>
     public double MinRelevance { get; init; } = 0.08;
 }
 
@@ -186,7 +186,21 @@ class RagPipeline
     /// <summary>The indexed chunks (read-only view).</summary>
     public IReadOnlyList<Chunk> Chunks => _chunks.AsReadOnly();
 
-    public RagPipeline(RagOptions options) => Options = options;
+    public RagPipeline(RagOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        // The abstention floor is meaningless — and actively dangerous — when
+        // non-finite. With NaN, every `score < MinRelevance` comparison is false
+        // so the pipeline never abstains, yet every `score >= MinRelevance` is
+        // also false so the carried context empties: the generator then runs on
+        // zero context while the answer is reported as grounded
+        // (Abstained: false) — the exact anti-hallucination guarantee this recipe
+        // exists to demonstrate, silently defeated. Reject it up front, the way
+        // the other recipes reject non-finite option knobs.
+        if (!double.IsFinite(options.MinRelevance))
+            throw new ArgumentOutOfRangeException(nameof(options), "MinRelevance must be a finite number.");
+        Options = options;
+    }
 
     /// <summary>Chunk and index a batch of documents. Can be called more than once to grow the corpus.</summary>
     public void Ingest(IEnumerable<Document> documents)

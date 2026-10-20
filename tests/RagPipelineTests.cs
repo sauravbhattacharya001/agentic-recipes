@@ -464,6 +464,45 @@ public class RagPipelineTests
         var ans = await Build(new RagOptions { TopK = -3 }).AskAsync("water damage warranty", CountingGenerator);
         Assert.True(ans.Abstained);
     }
+
+    // ── Options validation ───────────────────────────────────
+
+    [Fact]
+    public void Ctor_NullOptions_ThrowsArgumentNull()
+        => Assert.Throws<ArgumentNullException>(() => new RagPipeline(null!));
+
+    [Fact]
+    public void Ctor_NaNMinRelevance_Throws()
+        // Regression: a NaN floor silently defeats the abstention mechanism that
+        // this recipe exists to demonstrate. Every `topScore < NaN` is false, so
+        // AskAsync never abstains; every `r.Score >= NaN` is also false, so the
+        // carried context empties — the generator would then run on zero context
+        // while the answer is reported as grounded (Abstained: false). The only
+        // safe behavior is to refuse the configuration up front.
+        => Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RagPipeline(new RagOptions { MinRelevance = double.NaN }));
+
+    [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Ctor_InfiniteMinRelevance_Throws(double floor)
+        => Assert.Throws<ArgumentOutOfRangeException>(
+            () => new RagPipeline(new RagOptions { MinRelevance = floor }));
+
+    [Theory]
+    [InlineData(-1.0)]  // permissive: never abstains on score grounds
+    [InlineData(0.0)]
+    [InlineData(0.08)]  // the default
+    [InlineData(2.0)]   // strict: always abstains (a legal "refuse everything" dial position)
+    public void Ctor_FiniteMinRelevance_AcceptsAnyFiniteValue(double floor)
+    {
+        // Finite values — even outside [0, 1] — are meaningful dial positions and
+        // keep the abstention comparisons well-defined; only non-finite values
+        // are rejected. Pins the fix's scope so a future "simplification" can't
+        // quietly ban the always-abstain setting.
+        var rag = new RagPipeline(new RagOptions { MinRelevance = floor });
+        Assert.Equal(floor, rag.Options.MinRelevance);
+    }
 }
 
 // ── Supporting types (mirrors recipes/rag-pipeline/Program.cs) ──
@@ -495,7 +534,18 @@ class RagPipeline
 
     public IReadOnlyList<Chunk> Chunks => _chunks.AsReadOnly();
 
-    public RagPipeline(RagOptions options) => Options = options;
+    public RagPipeline(RagOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        // Mirror of recipes/rag-pipeline/Program.cs: a non-finite MinRelevance
+        // poisons every abstention comparison (NaN makes `<` always false so the
+        // pipeline never abstains, while `>=` is also false so the carried
+        // context empties), silently defeating the recipe's grounded-answer
+        // guarantee. Reject it at construction.
+        if (!double.IsFinite(options.MinRelevance))
+            throw new ArgumentOutOfRangeException(nameof(options), "MinRelevance must be a finite number.");
+        Options = options;
+    }
 
     public void Ingest(IEnumerable<Document> documents)
     {
