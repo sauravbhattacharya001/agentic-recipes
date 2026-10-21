@@ -277,6 +277,28 @@ public class MultiAgentDebateTests
     }
 
     [Fact]
+    public async Task NormalizeAnswer_ReturningNull_ThrowsClearError()
+    {
+        // A normalizer that returns null used to surface as a bare
+        // ArgumentNullException from Dictionary.TryGetValue deep in the round
+        // loop; reject it at the call site with a message that names the
+        // misbehaving delegate (mirrors the EnsembleVoter contract).
+        var a = Scripted("A", new DebateArgument("a", "yes", 0.7));
+        var b = Scripted("B", new DebateArgument("b", "no", 0.6));
+
+        var orch = new DebateOrchestrator(new DebateOptions
+        {
+            MaxRounds = 3,
+            NormalizeAnswer = _ => null!,
+        });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            orch.RunAsync("q", new[] { a, b }, ConfidenceJudge));
+        Assert.Contains("NormalizeAnswer", ex.Message);
+        Assert.Contains("null", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OnExchange_FiresOncePerRound()
     {
         var rounds = new List<int>();
@@ -624,7 +646,8 @@ class DebateOrchestrator
 
                 scoreByDebater[d.Name] += score;
                 answerByDebater[d.Name] = argument.Answer ?? "";
-                var key = normalize(argument.Answer ?? "");
+                var key = normalize(argument.Answer ?? "")
+                    ?? throw new InvalidOperationException("NormalizeAnswer must not return null.");
                 var display = argument.Answer ?? "";
                 var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: display, Weight: 0.0);
                 var canonicalDisplay = string.CompareOrdinal(display, prev.Display) < 0 ? display : prev.Display;

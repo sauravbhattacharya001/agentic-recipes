@@ -327,7 +327,8 @@ class DebateOrchestrator
                 // 2) Accumulate judge weight toward the debater and its current answer.
                 scoreByDebater[d.Name] += score;
                 answerByDebater[d.Name] = argument.Answer ?? "";
-                var key = normalize(argument.Answer ?? "");
+                var key = normalize(argument.Answer ?? "")
+                    ?? throw new InvalidOperationException("NormalizeAnswer must not return null.");
                 var display = argument.Answer ?? "";
                 var prev = weightByAnswer.TryGetValue(key, out var w) ? w : (Display: display, Weight: 0.0);
                 // Keep a DETERMINISTIC display form for the bucket: the ordinal-smallest
